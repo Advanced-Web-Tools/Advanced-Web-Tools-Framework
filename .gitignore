@@ -6,6 +6,8 @@
 
 .VSCodeCounter/*
 .idea/*
-awt_db.php
+./awt_db.php
+./awt_config.php
 public_html.code-workspace
 /awt_data/cache/
+/awt_data/*
