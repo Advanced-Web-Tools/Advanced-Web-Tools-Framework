@@ -54,7 +54,7 @@ class ColumnCreator
     public static function DATE(string $name): self
     {
         $instance = new self();
-        $instance->type = 'DATE';
+        $instance->type = 'DATETIME';
         $instance->name = $name;
         return $instance;
     }
