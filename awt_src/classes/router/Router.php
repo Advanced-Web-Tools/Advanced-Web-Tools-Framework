@@ -3,6 +3,7 @@ namespace router;
 
 use controller\Controller;
 use event\EventDispatcher;
+use middleware\IMiddleware;
 use object\ObjectFactory;
 use redirect\Redirect;
 use router\events\RouteEnterEvent;
@@ -51,6 +52,7 @@ class Router
      */
     public EventDispatcher $eventDispatcher;
 
+    private ?IMiddleware $middleware;
 
     public array $shared = [];
 
@@ -74,7 +76,8 @@ class Router
         $this->action = $action;
         $this->controller = $controller;
         $this->name = "";
-
+        $this->alias = "";
+        $this->middleware = null;
         $this->service = $service;
 
         return $this;
@@ -113,6 +116,13 @@ class Router
     public function addEventDispatcher(EventDispatcher $eventDispatcher): self
     {
         $this->eventDispatcher = $eventDispatcher;
+        return $this;
+    }
+
+
+    public function addMiddleware(IMiddleware $middleware): self
+    {
+        $this->middleware = $middleware;
         return $this;
     }
 
@@ -159,6 +169,12 @@ class Router
      */
     public function route(array $params = []): View|Redirect
     {
+
+        if($this->middleware !== null) {
+            $this->middleware->handle();
+        }
+
+
         if($this->controller instanceof ObjectFactory) {
             $this->controller = $this->controller->create();
         }
@@ -167,6 +183,7 @@ class Router
         $this->eventDispatcher->dispatch(new RouteEnterEvent($this->path, $this->action, $this->controller));
 
         $this->controller->viewName = $this->action;
+
         return $this->controller->{$this->action}($params);
     }
 }
