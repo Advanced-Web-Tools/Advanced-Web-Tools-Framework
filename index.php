@@ -1,5 +1,6 @@
 <?php
 global $settings;
+global $eventDispatcher;
 require_once './awt_dirMap.php';
 require_once './awt_config.php';
 require_once JOBS . 'loaders' . DIRECTORY_SEPARATOR . 'awt_autoLoader.php';
