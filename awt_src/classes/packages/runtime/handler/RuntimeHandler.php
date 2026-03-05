@@ -7,14 +7,13 @@ use event\EventDispatcher;
 use Exception;
 use object\ObjectHandler;
 use packages\runtime\api\RuntimeAPI;
-use packages\runtime\interface\IRuntime;
-use packages\runtime\handler;
-use packages\runtime\handler\enums\ERuntimeFlags;
 use packages\runtime\handler\enums\ERuntimeExceptions;
+use packages\runtime\handler\enums\ERuntimeFlags;
+use packages\runtime\interface\IRuntime;
 use packages\runtime\Runtime;
 use ReflectionClass;
 use ReflectionException;
-use vfs\event\ContextSwitchEvent;
+use vfs\resource\event\ContextSwitchEvent;
 
 /**
  * Class RuntimeHandler

@@ -1,6 +1,6 @@
 <?php
 
-namespace vfs\event;
+namespace vfs\resource\event;
 
 use event\interfaces\IEvent;
 

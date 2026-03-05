@@ -1,11 +1,10 @@
 <?php
 
-namespace vfs;
+namespace vfs\resource;
 
-use vfs\enums\EVFSType;
-use vfs\event\ContextRequestEvent;
+use vfs\resource\event\ContextRequestEvent;
 
-class VFS
+class Resource
 {
     public array $root;
     public string $context;
@@ -21,9 +20,9 @@ class VFS
 
     public function loadCache(): void
     {
-        if (file_exists(CACHE . "vfs.php")) {
-            $this->root = require CACHE . "vfs.php";
-            if ($this->root["hash"] !== hash("sha1", $this->root["path"]))
+        if (file_exists(CACHE . "resources.php")) {
+            $this->root = require CACHE . "resources.php";
+            if ($this->root["hash"] !== hash("xxh3", $this->root["path"]))
                 $this->initBuild();
             return;
         }
@@ -33,7 +32,7 @@ class VFS
 
     public function initBuild(): void
     {
-        $builder = new VFSBuilder();
+        $builder = new ResourceBuilder();
         $builder->cache();
         $this->root = $builder->root->__toArray();
     }
