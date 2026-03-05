@@ -7,13 +7,13 @@ use event\EventDispatcher;
 use Exception;
 use object\ObjectHandler;
 use packages\runtime\api\RuntimeAPI;
-use packages\runtime\interface\IRuntime;
-use packages\runtime\handler;
-use packages\runtime\handler\enums\ERuntimeFlags;
 use packages\runtime\handler\enums\ERuntimeExceptions;
+use packages\runtime\handler\enums\ERuntimeFlags;
+use packages\runtime\interface\IRuntime;
 use packages\runtime\Runtime;
 use ReflectionClass;
 use ReflectionException;
+use vfs\resource\event\ContextSwitchEvent;
 
 /**
  * Class RuntimeHandler
@@ -35,6 +35,7 @@ class RuntimeHandler extends RuntimeExceptions
     public array $passableInstances;
     public array $routers;
     public array $sharedObjects;
+    public ContextSwitchEvent $vfsContext;
 
     public CLIHandler $CLIHandler;
 
@@ -42,6 +43,7 @@ class RuntimeHandler extends RuntimeExceptions
 
     public function __construct()
     {
+        $this->vfsContext = new ContextSwitchEvent();
         $this->isLinker = false;
         $this->isRouter = false;
         $this->isPassable = false;
@@ -67,6 +69,8 @@ class RuntimeHandler extends RuntimeExceptions
 
         $this->setup();
 
+        $this->vfsContext->contextName = $origin->name;
+
         return $this->runtime;
     }
 
@@ -80,6 +84,7 @@ class RuntimeHandler extends RuntimeExceptions
     protected function createRuntimeInstance(RuntimeAPI $runtimeAPI, Runtime $origin): RuntimeAPI
     {
         $runtimeAPI->setInfo($origin);
+        $this->eventDispatcher->addListener("vfs.context.request", $this->vfsContext);
         $this->runtime = $runtimeAPI;
         return $this->runtime;
     }
