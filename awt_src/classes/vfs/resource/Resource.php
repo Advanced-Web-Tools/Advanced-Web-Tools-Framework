@@ -3,11 +3,13 @@
 namespace vfs\resource;
 
 use vfs\resource\event\ContextRequestEvent;
+use vfs\resource\exceptions\EResourceException;
+use vfs\resource\exceptions\ResourceException;
 
 class Resource
 {
-    public array $root;
-    public string $context;
+    public array   $root;
+    public ?string $context;
 
     public function __construct()
     {
@@ -15,15 +17,26 @@ class Resource
         $this->loadCache();
         $contextEvent = new ContextRequestEvent();
         $eventDispatcher->dispatch($contextEvent);
-        $this->context = $contextEvent->bundle()["context"]->contextName;
+        $this->context = $contextEvent->bundle()["context"]->contextName ?? null;
+    }
+
+    public function setContext(string $context): void
+    {
+        $this->context = $context;
+    }
+
+    public function getContext(): ?string
+    {
+        return $this->context;
     }
 
     public function loadCache(): void
     {
-        if (file_exists(CACHE . "resources.php")) {
-            $this->root = require CACHE . "resources.php";
-            if ($this->root["hash"] !== hash("xxh3", $this->root["path"]))
-                $this->initBuild();
+        $cache = new ResourceCache();
+        $map   = $cache->load();
+
+        if ($map !== null) {
+            $this->root = $map;
             return;
         }
 
@@ -32,84 +45,108 @@ class Resource
 
     public function initBuild(): void
     {
-        $builder = new ResourceBuilder();
+        $builder    = new ResourceBuilder();
         $builder->cache();
         $this->root = $builder->root->__toArray();
     }
 
     /**
-     * Gets the path of a file or directory in the VFS based on the access.
+     * Gets the path of a file or directory in the VFS based on the access string.
      *
-     * To access your own files, use the following format:
-     * <file.ext>
-     *     or
-     * <directory>:/<file.ext> (if you have multiple files with the same name)
+     * Own files:
+     *   <file.ext>
+     *   <directory>:/<file.ext>        (disambiguate by directory)
      *
-     * To access files from other packages use the following format:
-     * <package>:<file.ext>
-     *     or
-     * <package>:<directory>:/<file.ext> (if it has multiple files with the same name)
+     * Other package files:
+     *   <package>:<file.ext>
+     *   <package>:<directory>:/<file.ext>
      *
      * @param string $access
-     * @return string|null
+     * @param bool   $must   Throw if the file cannot be resolved or does not exist on disk.
+     * @throws ResourceException
      */
-    public function get(string $access): ?string
+    public function get(string $access, bool $must = false): ?string
     {
-        // Split on ':' not followed by '/' — this is the package separator
-        // e.g. 'PackageName:file.ext' or 'PackageName:directory:/file.ext'
-        $packageName = null;
-        $rest        = $access;
-
-        if (preg_match('/^([^:]+):(?!\/)(.+)$/', $access, $match)) {
-            $packageName = trim($match[1]);
-            $rest        = trim($match[2]);
+        if ($this->context === null) {
+            throw new ResourceException(EResourceException::MissingContext, $this);
         }
 
-        // Resolve the package node to search within
-        $packageNode = $this->findPackage($packageName ?? $this->context);
-        if ($packageNode === null) return null;
+        [$packageName, $rest] = $this->parseAccess($access);
 
-        // Split on ':/' — this is the directory separator
-        // e.g. 'directory:/file.ext' → ['directory', 'file.ext']
-        //      'file.ext'            → ['file.ext']
+        $packageNode = $this->findNodeByAlias($this->root, $packageName ?? $this->context);
+        if ($packageNode === null) {
+            return null;
+        }
+
+        $path = $this->resolvePath($packageNode, $rest);
+
+        $this->assertFound($path, $must);
+
+        return $path;
+    }
+
+
+    /**
+     * Splits an access string into [packageName|null, rest].
+     *
+     * 'PackageName:file.ext'            → ['PackageName', 'file.ext']
+     * 'PackageName:directory:/file.ext' → ['PackageName', 'directory:/file.ext']
+     * 'file.ext'                        → [null, 'file.ext']
+     *
+     * @return array{0: string|null, 1: string}
+     */
+    private function parseAccess(string $access): array
+    {
+        // ':' not followed by '/' is the package separator
+        if (preg_match('/^([^:]+):(?!\/)(.+)$/', $access, $match)) {
+            return [trim($match[1]), trim($match[2])];
+        }
+
+        return [null, $access];
+    }
+
+    /**
+     * Splits a rest string into directory segments and a final file alias.
+     *
+     * 'directory:/file.ext'        → [['directory'], 'file.ext']
+     * 'dir:/subdir:/file.ext'      → [['dir', 'subdir'], 'file.ext']
+     * 'file.ext'                   → [[], 'file.ext']
+     *
+     * @return array{0: string[], 1: string}
+     */
+    private function parsePath(string $rest): array
+    {
         $parts = array_map('trim', explode(':/', $rest));
 
-        if (count($parts) === 1) {
-            // No directory qualifier — search anywhere in the package
-            return $this->searchByAlias($packageNode, $parts[0]);
-        }
+        $fileAlias   = array_pop($parts);
+        $dirSegments = $parts;
 
-        // Walk down through each directory segment, then find the final alias
-        $dirSegments = array_slice($parts, 0, -1);
-        $fileAlias   = end($parts);
+        return [$dirSegments, $fileAlias];
+    }
+
+
+    /**
+     * Walks a package node using parsed path segments and returns the real path.
+     */
+    private function resolvePath(array $packageNode, string $rest): ?string
+    {
+        [$dirSegments, $fileAlias] = $this->parsePath($rest);
 
         $node = $packageNode;
         foreach ($dirSegments as $dir) {
-            $node = $this->findDirectChild($node, $dir);
-            if ($node === null) return null;
+            $node = $this->findNodeByAlias($node, $dir);
+            if ($node === null) {
+                return null;
+            }
         }
 
         return $this->searchByAlias($node, $fileAlias);
     }
 
-
     /**
-     * Find a direct first-level package node under root by alias.
+     * Finds a direct (non-recursive) child of a node by alias.
      */
-    private function findPackage(string $alias): ?array
-    {
-        foreach ($this->root['children'] as $child) {
-            if ($child['alias'] === $alias) {
-                return $child;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Find a direct (non-recursive) child of a node by alias.
-     */
-    private function findDirectChild(array $node, string $alias): ?array
+    private function findNodeByAlias(array $node, string $alias): ?array
     {
         foreach ($node['children'] as $child) {
             if ($child['alias'] === $alias) {
@@ -120,7 +157,7 @@ class Resource
     }
 
     /**
-     * Depth-first search for an alias anywhere inside a node's subtree.
+     * Depth-first search for an alias anywhere in a node's subtree.
      * Returns the real filesystem path on first match.
      */
     private function searchByAlias(array $node, string $alias): ?string
@@ -132,9 +169,35 @@ class Resource
 
             if (!empty($child['children'])) {
                 $result = $this->searchByAlias($child, $alias);
-                if ($result !== null) return $result;
+                if ($result !== null) {
+                    return $result;
+                }
             }
         }
         return null;
+    }
+
+
+    /**
+     * Enforces the $must contract:
+     *   - null path   → file not in the node tree at all  (FileNotFound)
+     *   - path exists → fine
+     *   - path absent → node tree knows it, disk doesn't  (FileExistsButNotFound)
+     *
+     * @throws ResourceException
+     */
+    private function assertFound(?string $path, bool $must): void
+    {
+        if (!$must) {
+            return;
+        }
+
+        if ($path === null) {
+            throw new ResourceException(EResourceException::FileNotFound, $this);
+        }
+
+        if (!file_exists($path)) {
+            throw new ResourceException(EResourceException::FileExistsButNotFound, $this);
+        }
     }
 }
