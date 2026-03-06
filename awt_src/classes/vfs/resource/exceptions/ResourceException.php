@@ -51,7 +51,7 @@ class ResourceException extends Exception
             $context = $this->resource->getContext();
 
             $contextString = is_scalar($context) ? (string)$context : json_encode($context);
-            $contextInfo = " | Context: {$contextString}";
+            $contextInfo = " | Context: {$contextString} | Access string: {$this->resource->access}";
         }
 
         return "{$prefix} {$reasonMessage}{$contextInfo}";

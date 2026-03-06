@@ -1,15 +1,15 @@
 <?php
 
-namespace vfs\storage\exceptions;
+namespace vfs\storage\exceptions\enums;
 use Exception;
-use vfs\storage\interface\IStorageEntryMiddleware;
-use vfs\storage\interface\IStorageProvider;
+use Throwable;
 
 class StorageException extends Exception
 {
-    private IStorageEntryMiddleware $middleware;
-    private IStorageProvider $provider;
-    private EStorageExceptions $reason;
-
-
+    public EStorageException $reason;
+    public function __construct(EStorageException $reason, int $code = 0, ?Throwable $previous = null)
+    {
+        $this->reason = $reason;
+        parent::__construct($reason->name, $code, $previous);
+    }
 }
