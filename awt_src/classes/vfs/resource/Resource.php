@@ -10,6 +10,7 @@ class Resource
 {
     public array   $root;
     public ?string $context;
+    public string $access;
 
     public function __construct()
     {
@@ -67,6 +68,8 @@ class Resource
      */
     public function get(string $access, bool $must = false): ?string
     {
+        $this->access = $access;
+
         if ($this->context === null) {
             throw new ResourceException(EResourceException::MissingContext, $this);
         }
