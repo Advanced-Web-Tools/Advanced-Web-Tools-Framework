@@ -43,6 +43,8 @@ class CacheControl
     /** @var list<array{path: string, kind: string}> */
     private array $watchTargets = [];
 
+    private string $contentFileName = self::CONTENT_FILE;
+
     private ECacheType $cacheType;
     private string|array $cacheContent;
 
@@ -72,6 +74,28 @@ class CacheControl
     public function setCacheValidation(ECacheValidationMethod $validation): self
     {
         $this->updateCacheInfo('validation', $validation->value);
+        return $this;
+    }
+
+    /**
+     * Overrides the default content filename ('content').
+     *
+     * The name must not collide with the reserved metadata filename ('meta').
+     * Only the stem is accepted — the extension is determined by ECacheType.
+     *
+     * Example: setCacheFileName('routes') → writes routes.php or routes.cache
+     */
+    public function setCacheFileName(string $name): self
+    {
+        $name = trim($name);
+
+        if ($name === '')
+            throw new \InvalidArgumentException('Cache file name must not be empty.');
+
+        if ($name === self::META_FILE)
+            throw new \InvalidArgumentException("'{$name}' is reserved for cache metadata.");
+
+        $this->contentFileName = $name;
         return $this;
     }
 
@@ -152,8 +176,13 @@ class CacheControl
         if ($info === null)
             return null;
 
-        $type  = ECacheType::from($info['type'] ?? 'file');
-        $entry = $this->transientStorage->getTransientStorageEntry($info['file'] ?? '');
+        $type     = ECacheType::from($info['type'] ?? 'file');
+        $filename = $info['file'] ?? '';
+
+        if (!$this->poolContains($filename))
+            return null;
+
+        $entry = $this->transientStorage->getTransientStorageEntry($filename);
 
         if ($entry === null)
             return null;
@@ -194,7 +223,12 @@ class CacheControl
             return $this->validateWatchedPaths($info['watch'], $info['watch_snapshots'], $method);
 
         // --- Fall back: validate the cache file itself -----------------------
-        $entry = $this->transientStorage->getTransientStorageEntry($info['file']);
+        $filename = $info['file'];
+
+        if (!$this->poolContains($filename))
+            return false;
+
+        $entry = $this->transientStorage->getTransientStorageEntry($filename);
 
         if ($entry === null)
             return false;
@@ -342,7 +376,7 @@ class CacheControl
         $exported = var_export($this->cacheContent, return: true);
         $body     = "<?php\n\nreturn {$exported};\n";
 
-        return [self::CONTENT_FILE, self::ARRAY_CACHE_EXT, $body];
+        return [$this->contentFileName, self::ARRAY_CACHE_EXT, $body];
     }
 
     /**
@@ -354,7 +388,7 @@ class CacheControl
             ? serialize($this->cacheContent)
             : $this->cacheContent;
 
-        return [self::CONTENT_FILE, self::FILE_CACHE_EXT, $body];
+        return [$this->contentFileName, self::FILE_CACHE_EXT, $body];
     }
 
     // -------------------------------------------------------------------------
@@ -382,5 +416,16 @@ class CacheControl
         $decoded = json_decode($entry->getContent() ?? '{}', associative: true);
 
         return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Returns true only when $filename exists inside the current pool.
+     *
+     * Uses TransientStorage::getTransientStorageEntry so the lookup is scoped
+     * to $currentPool — an absolute path from outside the pool will never match.
+     */
+    private function poolContains(string $filename): bool
+    {
+        return $this->transientStorage->getTransientStorageEntry($filename) !== null;
     }
 }
