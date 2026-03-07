@@ -2,7 +2,15 @@
 
 namespace vfs\storage\entry\repository;
 
-class StorageRepository
+use database\DatabaseManager;
+
+final class StorageRepository
 {
+    private DatabaseManager $database;
+
+    public function __construct()
+    {
+        $this->database = new DatabaseManager();
+    }
 
 }
