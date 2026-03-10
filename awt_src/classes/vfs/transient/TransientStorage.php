@@ -1,8 +1,8 @@
 <?php
 
-namespace vfs\TransientStorage;
+namespace vfs\transient;
 
-use vfs\TransientStorage\enums\ETransientType;
+use vfs\transient\enums\ETransientType;
 
 class TransientStorage
 {

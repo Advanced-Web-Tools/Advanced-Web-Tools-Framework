@@ -1,6 +1,6 @@
 <?php
 
-namespace vfs\TransientStorage\enums;
+namespace vfs\transient\enums;
 
 enum ETransientType: string
 {
