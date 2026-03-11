@@ -2,422 +2,341 @@
 
 namespace database;
 
-require ROOT . "/awt_db.php";
-
+use database\cache\DatabaseCache;
+use database\interface\ICache;
+use database\interface\IProvider;
+use database\provider\DatabaseProvider;
+use database\query\QueryBuilder;
+use database\trait\DoNotCache;
 use PDO;
-use PDOException;
 
 /**
- * DatabaseManager Class
+ * DatabaseManager
  *
- * The DatabaseManager class provides a data access layer for interacting
- * with a database using PDO (PHP Data Objects). It encapsulates common
- * database operations such as inserting, selecting, updating, and deleting
- * records, while promoting code reuse and reducing redundancy in database
- * interactions.
+ * Facade that exposes a fluent, chainable API for all database operations.
+ * Every concern is delegated to a dedicated collaborator:
  *
- *Features:
+ *   QueryBuilder  Assembles parameterised SQL strings and their PDO bindings.
+ *   IProvider     Executes prepared statements against the database connection.
+ *   ICache        Stores SELECT results and evicts them when data changes.
  *
- * - Connection Management:
- *   - Establishes a connection to the database using defined credentials.
- *   - Handles connection errors by throwing exceptions.
+ * Cache behaviour is determined at construction time by inspecting whether the
+ * DoNotCache trait is present on the concrete class. When it is, all cache
+ * reads and writes are skipped for the lifetime of the instance; the database
+ * is always queried directly.
  *
- * - Table Operations:
- *   - Allows chaining of methods to specify the target database table for operations.
- *
- * - Insert Operation:
- *   - Facilitates insertion of new records into a specified table.
- *   - Prepares and executes SQL statements with bound parameters.
- *
- * - Select Operation:
- *   - Supports selecting records with options for specifying columns,
- *     applying joins, and filtering results with WHERE clauses.
- *   - Returns results as an associative array.
- *
- * - Update Operation:
- *   - Provides functionality to update existing records based on specified conditions.
- *
- * - Delete Operation:
- *   - Allows deletion of records from a specified table based on conditions.
- *
- * - Schema Inspection:
- *   - Includes methods to retrieve table structures and check for the existence
- *     of tables and columns in the database.
- *
- * - Destructor:
- *   - Cleans up class properties and connection resources when the object is destroyed.
+ * All dependencies have default values and can be replaced via constructor
+ * injection, making the class straightforward to test in isolation.
  */
 class DatabaseManager
 {
+    /** @var array Holds the result of the last getTables() call for schema inspection. */
     public array $tables = [];
-    private string $hostname = DB_HOSTNAME;
-    private string $username = DB_USERNAME;
-    private string $password = DB_PASSWORD;
-    private string $database = DB_NAME;
-    private string $sql = '';
-    private string $selectQuery = '';
-    private string $joinQuery = '';
-    private string $whereQuery = '';
-    private array $orderBy = [];
-    private string $tableName = '';
-    private array $columns = [];
-    private array $values = [];
-    private array $joins = [];
-    private array $conditions = [];
-    protected ?PDO $pdo;
+
+    /** @var string The SQL string produced by the most recently executed operation. */
     private string $lastQuery = '';
 
     /**
-     * Constructor method that initializes the PDO connection to the database.
-     * It sets the error mode to exceptions for better error handling.
+     * @var bool Controls whether the cache is consulted on reads and populated
+     *           on misses. Set to false when the DoNotCache trait is detected
+     *           on the current class or any of its parents.
      */
-
-    public function __construct()
-    {
-        global $shared;
-
-        $dsn = DB_TYPE . ":host={$this->hostname};dbname={$this->database}";
-
-        if(!isset($shared["DBEngine"]["PDO"])) {
-            try {
-                $this->pdo = new PDO($dsn, $this->username, $this->password);
-                $this->pdo->setAttribute(PDO::ATTR_PERSISTENT, PDO::ERRMODE_EXCEPTION);
-                $shared["DBEngine"]["PDO"] = $this->pdo;
-            } catch (PDOException $e) {
-                die('Connection failed: ' . $e->getMessage());
-            }
-        } else {
-            $this->pdo = $shared["DBEngine"]["PDO"];
-        }
-    }
-
-    public function __destruct() {
-        $this->pdo = null;
-    }
+    private bool $cacheOn = true;
 
     /**
-     * Specifies the table to operate on.
+     * @param IProvider    $provider Executes SQL against the database.
+     * @param QueryBuilder $builder  Assembles SQL strings and bindings from fluent calls.
+     * @param ICache       $cache    Stores and invalidates cached query results.
+     */
+    public function __construct(
+        private readonly IProvider    $provider = new DatabaseProvider(),
+        private readonly QueryBuilder $builder  = new QueryBuilder(),
+        private readonly ICache       $cache    = new DatabaseCache(),
+    ) {
+        $this->cacheOn = !in_array(DoNotCache::class, self::class_uses_recursive($this));
+    }
+
+
+    /**
+     * Set the table all subsequent query clauses will target.
      *
-     * @param string $name The name of the table.
-     * @return $this The instance of the DatabaseManager for chaining.
+     * @param string $name Table name.
      */
     public function table(string $name): self
     {
-        $this->tableName = $name;
+        $this->builder->table($name);
         return $this;
     }
 
     /**
-     * Builds an insert query by accepting an associative array of column-value pairs.
+     * Prepare column/value pairs for an INSERT statement.
+     * Must be followed by executeInsert() to run the query.
      *
-     * @param array $data Associative array where keys are columns and values are the values to insert.
-     * @return $this The instance of the DatabaseManager for chaining.
+     * @param array $data Associative array of column => value pairs to insert.
      */
     public function insert(array $data): self
     {
-        foreach ($data as $column => $value) {
-            $this->columns[] = $column;
-            $this->values[":{$column}"] = $value;
-        }
+        $this->builder->insert($data);
         return $this;
     }
 
     /**
-     * Executes the built insert query and returns the last inserted ID.
+     * Set the column list for a SELECT statement.
+     * Defaults to wildcard (*) when no columns are provided.
      *
-     * @return int|null Returns the ID of the inserted row or null on failure.
-     * @throws PDOException If there is a mismatch between the number of columns and values.
-     */
-    public function executeInsert(): ?int
-    {
-        $columnList = implode(', ', $this->columns);
-        $placeholderList = implode(', ', array_keys($this->values));
-
-        // Check if the number of columns matches the number of values
-        if (count($this->columns) !== count($this->values)) {
-            throw new PDOException("Column count does not match value count.");
-        }
-
-        $sql = "INSERT INTO {$this->tableName} ({$columnList}) VALUES ({$placeholderList})";
-
-        $stmt = $this->pdo->prepare($sql);
-
-        foreach ($this->values as $placeholder => $value) {
-            $stmt->bindValue($placeholder, $value);
-        }
-
-        if ($stmt->execute()) {
-            $lastInsertId = (int)$this->pdo->lastInsertId();
-            $stmt->closeCursor();
-            $this->columns = array();
-            $this->values = array();
-            return $lastInsertId;
-        }
-
-        $stmt->closeCursor();
-        $this->columns = array();
-        $this->values = array();
-
-        self::showDebugTrace();
-
-        $this->reset();
-        return null;
-    }
-
-    /**
-     * Builds a SELECT query by specifying columns to retrieve.
-     *
-     * @param array $columns List of column names to select.
-     * @return $this The instance of the DatabaseManager for chaining.
+     * @param array $columns List of column names or expressions to select.
      */
     public function select(array $columns = ['*']): self
     {
-        $columnList = implode(', ', $columns);
-        $this->selectQuery = "SELECT {$columnList} FROM {$this->tableName}";
+        $this->builder->select($columns);
         return $this;
     }
 
     /**
-     * Adds a join clause to the query.
+     * Append a JOIN clause to the current SELECT query.
+     * Multiple calls append multiple joins in the order they are called.
      *
      * @param string $table The table to join.
-     * @param string $on The condition for joining.
-     * @param string $type The type of join (e.g., INNER, LEFT).
-     * @return $this The instance of the DatabaseManager for chaining.
+     * @param string $on    The ON condition (e.g. "posts.user_id = users.id").
+     * @param string $type  Join type: INNER, LEFT, RIGHT, etc. Defaults to INNER.
      */
     public function join(string $table, string $on, string $type = 'INNER'): self
     {
-        $this->joins[] = " {$type} JOIN {$table} ON {$on}";
+        $this->builder->join($table, $on, $type);
         return $this;
     }
 
     /**
-     * Adds a WHERE clause to the query with conditions.
+     * Add a WHERE clause using equality (or inequality) conditions.
      *
-     * @param array $conditions Associative array where keys are columns and values are the values to filter by.
-     * @param bool $useNot Whether to use != instead of = in the condition.
-     * @return $this The instance of the DatabaseManager for chaining.
+     * All column/value pairs are recorded and later forwarded to the cache
+     * layer so that CUD operations can evict only the cache entries whose
+     * conditions overlap with the mutation.
+     *
+     * @param array  $conditions  Associative array of column => value pairs.
+     * @param bool   $useNot      When true, uses != instead of = for all conditions.
+     * @param string $conjunction Logical operator joining multiple conditions: AND or OR.
      */
     public function where(array $conditions, bool $useNot = false, string $conjunction = 'AND'): self
     {
-        $conjunction = strtoupper($conjunction);
-        if (!in_array($conjunction, ['AND', 'OR'])) {
-            $conjunction = 'AND';
-        }
-
-        $whereClauses = [];
-        foreach ($conditions as $column => $value) {
-            $operator = $useNot ? "!=" : "=";
-            $whereClauses[] = "{$column} {$operator} :{$column}";
-            $this->conditions[":{$column}"] = $value;
-        }
-        $this->whereQuery = " WHERE " . implode(" {$conjunction} ", $whereClauses);
+        $this->builder->where($conditions, $useNot, $conjunction);
         return $this;
     }
 
-
     /**
-     * Adds a LIKE clause to the query with conditions.
+     * Add a WHERE clause using LIKE pattern matching.
      *
-     * @param array $conditions Associative array where keys are columns and values are the patterns to match.
-     * @param bool $useNot Whether to use NOT LIKE instead of LIKE in the condition.
-     * @return $this The instance of the DatabaseManager for chaining.
+     * @param array $conditions Associative array of column => pattern pairs.
+     * @param bool  $useNot     When true, uses NOT LIKE instead of LIKE.
      */
     public function like(array $conditions, bool $useNot = false): self
     {
-        $likeClauses = [];
-        foreach ($conditions as $column => $value) {
-            $operator = $useNot ? "NOT LIKE" : "LIKE";
-            $likeClauses[] = "{$column} {$operator} :{$column}";
-            $this->conditions[":{$column}"] = $value;
-        }
-        $this->whereQuery = " WHERE " . implode(' AND ', $likeClauses);
+        $this->builder->like($conditions, $useNot);
         return $this;
     }
 
-
     /**
-     * Adds an ORDER BY clause to the query.
+     * Append an ORDER BY expression to the SELECT query.
+     * Multiple calls append multiple sort expressions in the order called.
      *
-     * @param string $column The column to order by.
-     * @param string $direction The direction of sorting (ASC or DESC).
-     * @return $this The instance of the DatabaseManager for chaining.
+     * @param string $column    The column to sort by.
+     * @param string $direction ASC or DESC. Defaults to ASC.
      */
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
-        $this->orderBy[] = "$column $direction";
+        $this->builder->orderBy($column, $direction);
         return $this;
     }
 
     /**
-     * Executes the SELECT query and retrieves the results as an associative array.
+     * Execute the INSERT prepared by insert() and return the new row's ID.
      *
-     * @param int|null $offset Optional offset for LIMIT clause.
-     * @param int|null $limit Optional limit for LIMIT clause.
-     * @return array The resulting rows as an associative array.
+     * After a successful insert, all cached queries for the target table are
+     * invalidated. Because an INSERT carries no WHERE conditions, there is no
+     * basis for a narrower eviction; the entire table cache is flushed.
+     *
+     * @return int|null The auto-increment ID of the inserted row, or null if
+     *                  no ID was generated.
      */
-    public function get(?int $offset = null, ?int $limit = null): array
+    public function executeInsert(): ?int
     {
-        $sql = $this->selectQuery . implode('', $this->joins) . $this->whereQuery;
+        $payload = $this->builder->buildInsert();
+        $this->builder->reset();
 
-        if (!empty($this->orderBy)) {
-            $sql .= ' ORDER BY ' . implode(', ', $this->orderBy);
-        }
+        $stmt = $this->provider->execute($payload->sql, $payload->bindings);
+        $stmt->closeCursor();
 
-        if ($limit !== null) {
-            $sql .= ' LIMIT :limit';
-            if ($offset !== null) {
-                $sql .= ' OFFSET :offset';
+        $id = $this->provider->lastInsertId();
+
+        $this->cache->invalidate($payload->table, []);
+
+        $this->lastQuery = $payload->sql;
+        self::showDebugTrace();
+
+        return $id ?: null;
+    }
+
+    /**
+     * Execute the SELECT prepared by select(), where(), join(), and orderBy(),
+     * then return all matching rows as an associative array.
+     *
+     * Read path when caching is active:
+     *   1. Check the cache. On a hit, return the stored rows immediately.
+     *   2. On a miss, execute the query against the database.
+     *   3. Store the result in the cache, indexed by the SQL string and the
+     *      raw WHERE conditions, then return the rows.
+     *
+     * When the DoNotCache trait is present, steps 1 and 3 are skipped and the
+     * database is always queried directly.
+     *
+     * @param int|null $limit  Maximum number of rows to return.
+     * @param int|null $offset Number of rows to skip before returning results.
+     *
+     * @return array Rows as associative arrays, keyed by column name.
+     */
+    public function get(?int $limit = null, ?int $offset = null): array
+    {
+        $payload = $this->builder->buildSelect($limit, $offset);
+        $this->builder->reset();
+
+        $this->lastQuery = $payload->sql;
+        self::showDebugTrace();
+
+        if ($this->cacheOn) {
+            $cached = $this->cache->get($payload->table, $payload->sql);
+            if ($cached !== false) {
+                return $cached;
             }
         }
 
-        $stmt = $this->pdo->prepare($sql);
-
-        foreach ($this->conditions as $placeholder => $value) {
-            $stmt->bindValue($placeholder, $value);
-        }
-
-        if ($limit !== null) {
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-            if ($offset !== null) {
-                $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-            }
-        }
-
-        $this->sql = $sql;
-
-        try {
-            $stmt->execute();
-        } catch (PDOException $e) {
-            $stmt->closeCursor();
-            if (DEBUG)
-                die("Error has occurred: " . $e->getMessage() . "<br>" . "SQL: " . $sql);
-        }
-
+        $stmt   = $this->provider->execute($payload->sql, $payload->bindings);
         $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $stmt->closeCursor();
-        self::showDebugTrace();
-        $this->reset();
+
+        if ($this->cacheOn)
+            $this->cache->set($payload->table, $payload->sql, $result, $payload->conditions);
+
         return $result;
     }
 
     /**
-     * Builds and executes an UPDATE query.
+     * Execute the UPDATE prepared by where() and return whether any rows changed.
      *
-     * @param array $data Associative array where keys are columns and values are the new values to update.
-     * @return bool Returns true on success, false on failure.
+     * After execution, the cache is invalidated selectively: only cached SELECT
+     * queries whose stored WHERE conditions overlap with the UPDATE's WHERE
+     * conditions are evicted. Cached queries for the same table that target
+     * entirely different rows are left intact.
+     *
+     * Full-table SELECT caches (those stored without any WHERE conditions) are
+     * always evicted on any UPDATE, because they may contain the affected rows.
+     *
+     * @param array $data Associative array of column => new value pairs to set.
+     *
+     * @return bool True if at least one row was modified, false otherwise.
      */
     public function update(array $data): bool
     {
-        $setClauses = [];
-        foreach ($data as $column => $value) {
-            if ($value === 'DEFAULT') {
-                $setClauses[] = "{$column} = DEFAULT"; // Set to DEFAULT directly
-            } else {
-                $setClauses[] = "{$column} = :{$column}";
-                $this->values[":{$column}"] = $value;
-            }
-        }
+        $payload = $this->builder->buildUpdate($data);
+        $this->builder->reset();
 
-        $setQuery = implode(', ', $setClauses);
-        $sql = "UPDATE {$this->tableName} SET {$setQuery}" . $this->whereQuery;
-
-        $stmt = $this->pdo->prepare($sql);
-
-        foreach ($this->conditions as $placeholder => $value) {
-            $stmt->bindValue($placeholder, $value);
-        }
-
-        foreach ($this->values as $placeholder => $value) {
-            $stmt->bindValue($placeholder, $value);
-        }
-
-        $result = $stmt->execute();
+        $stmt   = $this->provider->execute($payload->sql, $payload->bindings);
+        $result = $stmt->rowCount() > 0;
         $stmt->closeCursor();
+
+        $this->cache->invalidate($payload->table, $payload->conditions);
+
+        $this->lastQuery = $payload->sql;
         self::showDebugTrace();
 
-        $this->reset();
         return $result;
     }
 
     /**
-     * Executes a DELETE query with the conditions specified in the WHERE clause.
+     * Execute the DELETE prepared by where() and return whether any rows were removed.
      *
-     * @return bool Returns true on success, false on failure.
+     * Calling delete() without a preceding where() call throws a LogicException.
+     * To delete all rows intentionally, use where(['1' => '1']) first.
+     *
+     * Cache invalidation follows the same overlap rules as update(): only cached
+     * SELECT queries whose conditions intersect with the DELETE's WHERE conditions
+     * are evicted.
+     *
+     * @return bool True if at least one row was deleted, false otherwise.
+     *
+     * @throws \LogicException When no WHERE clause has been set.
      */
     public function delete(): bool
     {
-        if($this->whereQuery === '') {
-            if(DEBUG) {
-                $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+        $payload = $this->builder->buildDelete();
+        $this->builder->reset();
 
-                foreach ($trace as $level) {
-                    echo "File: " . ($level['file'] ?? '[internal]') . " Line: " . ($level['line'] ?? '?') . "<br>";
-                    echo "Function: " . ($level['function'] ?? '[global]') . "<br><br>";
-                }
-
-                die("No WHERE clause specified for DELETE query. This is a dangerous operation. Please check your code.<br>If your intention is to delete all records, use where(['1'=>'1']) instead.");
-            }
-
-            return false;
-        }
-
-
-        $sql = "DELETE FROM {$this->tableName}" . $this->whereQuery;
-
-        $stmt = $this->pdo->prepare($sql);
-
-        foreach ($this->conditions as $placeholder => $value) {
-            $stmt->bindValue($placeholder, $value);
-        }
-
-        $result = $stmt->execute();
+        $stmt   = $this->provider->execute($payload->sql, $payload->bindings);
+        $result = $stmt->rowCount() > 0;
         $stmt->closeCursor();
+
+        $this->cache->invalidate($payload->table, $payload->conditions);
+
+        $this->lastQuery = $payload->sql;
         self::showDebugTrace();
 
-        $this->reset();
         return $result;
     }
 
+    // =========================================================================
+    // Schema helpers
+    // =========================================================================
+
     /**
-     * Retrieves a list of tables by performing a join with a predefined table structure.
+     * Fetch all table and column definitions from the framework schema tables
+     * and store them in $this->tables for use by checkTable() and checkColumn().
      *
-     * @return $this The instance of the DatabaseManager for chaining.
+     * Results go through the normal get() path and are cached like any other
+     * SELECT query.
      */
     public function getTables(): self
     {
-        $this->tables = $this->table('awt_table')->select(['*'])
+        $this->tables = $this->table('awt_table')
+            ->select(['*'])
             ->where(['1' => 1])
-            ->join("awt_table_structure", "awt_table.id = awt_table_structure.table_id")
+            ->join('awt_table_structure', 'awt_table.id = awt_table_structure.table_id')
             ->get();
+
         return $this;
     }
 
     /**
-     * Checks if a specific table exists in the database.
+     * Check whether a table with the given name exists in the schema.
      *
-     * @param string $table The name of the table.
-     * @return bool Returns true if the table exists, false otherwise.
+     * Calls getTables() automatically if the schema has not been loaded yet.
+     *
+     * @param string $table The table name to look for.
+     *
+     * @return bool True if the table exists, false otherwise.
      */
     public function checkTable(string $table): bool
     {
-        if(empty($this->tables))
+        if (empty($this->tables)) {
             $this->getTables();
+        }
 
-        foreach ($this->tables as $tables) {
-            if (array_key_exists('name', $tables) && $tables["name"] === $table) {
+        foreach ($this->tables as $row) {
+            if (isset($row['name']) && $row['name'] === $table) {
                 return true;
             }
         }
+
         return false;
     }
 
     /**
-     * Checks if a specific column exists within a table.
+     * Check whether a specific column exists within a specific table.
      *
-     * @param string $table The table name.
-     * @param string $column The column name.
-     * @return bool Returns true if the column exists, false otherwise.
+     * Calls getTables() automatically if the schema has not been loaded yet.
+     *
+     * @param string $table  The table to inspect.
+     * @param string $column The column name to look for within that table.
+     *
+     * @return bool True if the column exists in the table, false otherwise.
      */
     public function checkColumn(string $table, string $column): bool
     {
@@ -425,64 +344,95 @@ class DatabaseManager
             $this->getTables();
         }
 
-        foreach ($this->tables as $tables) {
-            if (array_key_exists('name', $tables) && $tables["column_name"] === $column && $tables["name"] === $table) {
+        foreach ($this->tables as $row) {
+            if (
+                isset($row['name'], $row['column_name']) &&
+                $row['name'] === $table &&
+                $row['column_name'] === $column
+            ) {
                 return true;
             }
         }
+
         return false;
     }
 
+    // =========================================================================
+    // Debug helpers
+    // =========================================================================
 
+    /**
+     * Return the SQL string produced by the most recently executed operation.
+     * Useful for logging and verifying query output during development.
+     */
     public function getLastQuery(): string
     {
         return $this->lastQuery;
     }
 
+    /**
+     * Print a chain of file/line references showing where the current SQL call
+     * originated. Output is suppressed unless both DEBUG and
+     * SHOW_SQL_CONNECTIONS_CALLS constants are defined and truthy.
+     */
+    private static function showDebugTrace(): void
+    {
+        if (!defined('DEBUG') || !DEBUG) {
+            return;
+        }
+
+        if (!defined('SHOW_SQL_CONNECTIONS_CALLS') || !SHOW_SQL_CONNECTIONS_CALLS) {
+            return;
+        }
+
+        echo 'SQL called by: ' . self::getCallerChain() . '<br>';
+    }
+
+    /**
+     * Build a human-readable call chain from the current backtrace.
+     *
+     * Frames are reversed so the outermost caller appears first, making it
+     * easier to trace the origin of a query through layers of nested calls.
+     *
+     * @return string File:line pairs joined by " -> ", outermost caller first.
+     */
     private static function getCallerChain(): string
     {
-        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
-        $files = [];
+        $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+        $parts  = [];
 
-        foreach ($backtrace as $trace) {
-            if (isset($trace['file'])) {
-                $filename = basename($trace['file']);
-                $line = $trace['line'] ?? '?';
-                $files[] = "{$filename}:{$line}";
+        foreach ($frames as $frame) {
+            if (isset($frame['file'])) {
+                $parts[] = basename($frame['file']) . ':' . ($frame['line'] ?? '?');
             }
         }
 
-        // Reverse to show caller first
-        $files = array_reverse($files);
-
-        return implode('->', $files);
+        return implode(' -> ', array_reverse($parts));
     }
 
-    private static function showDebugTrace(): void
+    /**
+     * Collect all traits used by a class and its full parent chain.
+     *
+     * PHP's built-in class_uses() only inspects the class it is directly given
+     * and does not walk up the inheritance tree. This method merges the trait
+     * lists for the given class and every parent class, ensuring that traits
+     * declared anywhere in the hierarchy are detected.
+     *
+     * Used at construction time to determine whether the DoNotCache trait is
+     * present on the concrete class being instantiated.
+     *
+     * @param object|string $class The object instance or fully-qualified class name to inspect.
+     *
+     * @return array Flat array of fully-qualified trait names found across the hierarchy.
+     */
+    private static function class_uses_recursive(object|string $class): array
     {
-        if(DEBUG && SHOW_SQL_CONNECTIONS_CALLS)
-            echo "SQL Connection called by: " . self::getCallerChain() . "<br>";
-    }
+        $results = [];
 
-
-    public function reset(): void
-    {
-        $this->lastQuery = $this->sql;
-        $this->sql = '';
-        $this->selectQuery = '';
-        $this->joinQuery = '';
-        $this->whereQuery = '';
-        $this->orderBy = [];
-        $this->tableName = '';
-        $this->columns = [];
-        $this->values = [];
-        $this->joins = [];
-        $this->conditions = [];
-        $this->tables = [];
-
-        if ($this->pdo !== null) {
-            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        foreach (array_merge([$class], class_parents($class)) as $c) {
+            $results += class_uses($c);
         }
 
+        return array_unique($results);
     }
 }
