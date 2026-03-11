@@ -11,6 +11,7 @@
 
 namespace controller;
 
+use context\Context;
 use /**
  * Interface IController
  *
@@ -44,8 +45,18 @@ abstract class Controller extends View implements IController
      * @var string $rootDirPath The root directory path for the controller.
      */
     public string $rootDirPath;
-
+    private ?Context $context = null;
     public array $shared = [];
+
+    public function setContext(Context $context): void
+    {
+        $this->context = $context;
+    }
+
+    public function getContext(): Context
+    {
+        return $this->context;
+    }
 
     /**
      * Sets the root directory path for the controller.
