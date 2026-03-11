@@ -3,97 +3,138 @@
 namespace vfs\storage;
 
 use database\DatabaseManager;
+use vfs\storage\interfaces\IStorageRepository;
 use vfs\storage\enums\EOwnerType;
 
-class StorageRepository
+/**
+ * Class StorageRepository
+ *
+ * Implements IStorageRepository (DIP). All database access is encapsulated
+ * here so higher-level classes depend on the interface, not this class.
+ * Method names are also standardised to match the interface contract.
+ */
+class StorageRepository implements IStorageRepository
 {
     private DatabaseManager $database;
+
     public function __construct()
     {
         $this->database = new DatabaseManager();
     }
 
-    public function fetchAllEntries(): array
+    // ----------------------------------------------------------------
+    // IStorageRepository implementation
+    // ----------------------------------------------------------------
+
+    public function fetchAll(): array
     {
-        $res = $this->database->table('awt_storage')->select(["id"])->where(["1" => "1"])->get();
+        $rows = $this->database
+            ->table('awt_storage')
+            ->select(['id'])
+            ->where(['1' => '1'])
+            ->get();
 
-        $result = [];
-
-        foreach($res as $r) {
-            $result[] = new StorageEntry($r['id']);
-        }
-
-        return $result;
+        return $this->hydrateCollection($rows);
     }
 
-    public function fetchEntryById(int $id): StorageEntry
+    public function fetchById(int $id): StorageEntry
     {
         return new StorageEntry($id);
     }
 
-    public function createEntry(StorageEntry $entry): StorageEntry
-    {
-        $entry->saveModel();
-        return $entry;
-    }
-
-    public function deleteEntry(StorageEntry $entry): bool
-    {
-        return $entry->delete();
-    }
-
-
     public function fetchByOwner(int $ownerId): array
     {
-        $res = $this->database->table('awt_storage')->select(["id"])->where(["ownerId" => $ownerId])->get();
+        $rows = $this->database
+            ->table('awt_storage')
+            ->select(['id'])
+            ->where(['ownerId' => $ownerId])
+            ->get();
 
-        $result = [];
-
-        foreach($res as $r) {
-            $result[] = new StorageEntry($r['id']);
-        }
-
-        return $result;
+        return $this->hydrateCollection($rows);
     }
 
     public function fetchByName(string $name): array
     {
-        $res = $this->database->table('awt_storage')->select(["id"])->where(["name" => $name])->get();
-        $result = [];
+        $rows = $this->database
+            ->table('awt_storage')
+            ->select(['id'])
+            ->where(['name' => $name])
+            ->get();
 
-        foreach($res as $r) {
-            $result[] = new StorageEntry($r['id']);
-        }
-
-        return $result;
+        return $this->hydrateCollection($rows);
     }
 
     public function fetchByOwnerType(EOwnerType $ownerType): array
     {
-        $res = $this->database->table('awt_storage')->select(["id"])->where(["ownerType" => $ownerType->value])->get();
-        $result = [];
-        foreach($res as $r) {
-            $result[] = new StorageEntry($r['id']);
-        }
-        return $result;
+        $rows = $this->database
+            ->table('awt_storage')
+            ->select(['id'])
+            ->where(['ownerType' => $ownerType->value])
+            ->get();
+
+        return $this->hydrateCollection($rows);
     }
 
     public function fetchByOwnerTypeAndOwner(EOwnerType $ownerType, int $ownerId): array
     {
-        $res = $this->database->table('awt_storage')->select(["id"])->where(["ownerType" => $ownerType->value, "ownerId" => $ownerId])->get();
-        $result = [];
-        foreach($res as $r) {
-            $result[] = new StorageEntry($r['id']);
-        }
-        return $result;
+        $rows = $this->database
+            ->table('awt_storage')
+            ->select(['id'])
+            ->where(['ownerType' => $ownerType->value, 'ownerId' => $ownerId])
+            ->get();
+
+        return $this->hydrateCollection($rows);
     }
 
     public function fetchByOwnerAndName(int $ownerId, string $name): ?StorageEntry
     {
-        $res = $this->database->table('awt_storage')->select(["id"])->where(["ownerId" => $ownerId, "name" => $name])->get();
-        if(empty($res))
-            return null;
+        $rows = $this->database
+            ->table('awt_storage')
+            ->select(['id'])
+            ->where(['ownerId' => $ownerId, 'name' => $name])
+            ->get();
 
-        return new StorageEntry($res[0]['id']);
+        if (empty($rows)) {
+            return null;
+        }
+
+        return new StorageEntry($rows[0]['id']);
+    }
+
+    public function create(StorageEntry $entry): StorageEntry
+    {
+        $id = $entry->saveModel();
+        $entry->setModelId($id);
+        $entry->setUrl();
+        $entry->save();
+        return $entry;
+    }
+
+    public function update(StorageEntry $entry): bool
+    {
+        return $entry->save();
+    }
+
+    public function delete(StorageEntry $entry): bool
+    {
+        return $entry->deleteModel();
+    }
+
+    // ----------------------------------------------------------------
+    // Private helpers
+    // ----------------------------------------------------------------
+
+    /**
+     * Converts a flat array of ['id' => x] rows into StorageEntry objects.
+     *
+     * @param array $rows
+     * @return StorageEntry[]
+     */
+    private function hydrateCollection(array $rows): array
+    {
+        return array_map(
+            static fn(array $row): StorageEntry => new StorageEntry($row['id']),
+            $rows
+        );
     }
 }

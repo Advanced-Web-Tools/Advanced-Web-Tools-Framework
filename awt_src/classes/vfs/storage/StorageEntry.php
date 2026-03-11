@@ -5,26 +5,39 @@ namespace vfs\storage;
 use model\Model;
 use vfs\storage\enums\EOwnerType;
 
+/**
+ * Class StorageEntry
+ *
+ * A pure data-model/entity (SRP). All file system concerns have been
+ * removed and now live in LocalFileSystemService. This class is only
+ * responsible for holding and validating storage entry state.
+ */
 class StorageEntry extends Model
 {
-    public ?int $id;
-    public ?string $name;
-    public ?string $path;
-    public ?string $url;
-    public ?int $size;
-    public ?string $middleware;
-    public ?int $lastModified;
-    public ?int $ownerId;
-    public ?EOwnerType $ownerType;
-    public function __construct(?int $id = null) {
+    public ?int        $id;
+    public ?string     $name;
+    public ?string     $path;
+    public ?string     $url;
+    public ?int        $size;
+    public ?string     $middleware;
+    public ?int        $lastModified;
+    public ?int        $ownerId;
+    public string|EOwnerType $ownerType;
+
+    public function __construct(?int $id = null)
+    {
         parent::__construct();
 
         $this->id = $id;
-
-        if($this->id !== null)
-            $this->selectByID($this->id, "awt_storage");
+        $this->model_source = 'awt_storage';
+        if ($this->id !== null) {
+            $this->selectByID($this->id);
+        }
     }
 
+    // ----------------------------------------------------------------
+    // Fluent setters
+    // ----------------------------------------------------------------
 
     public function setPath(string $path): self
     {
@@ -32,20 +45,20 @@ class StorageEntry extends Model
         return $this;
     }
 
-    public function setSize(?int $size = null): self
+    /**
+     * @param int $size Pre-computed file size in bytes.
+     */
+    public function setSize(int $size): self
     {
-        if($size === null)
-            $size = filesize($this->path);
-
         $this->size = $size;
         return $this;
     }
 
-    public function setLastModified(?int $lastModified = null): self
+    /**
+     * @param int $lastModified Unix timestamp of the last modification.
+     */
+    public function setLastModified(int $lastModified): self
     {
-        if($lastModified === null)
-            $lastModified = filemtime($this->path);
-
         $this->lastModified = $lastModified;
         return $this;
     }
@@ -56,15 +69,14 @@ class StorageEntry extends Model
         return $this;
     }
 
+    /**
+     * Provide an explicit URL, or pass null to derive it from id + name.
+     */
     public function setUrl(?string $url = null): self
     {
-        $this->url = $url;
-        if($url === null)
-            $this->url = "/storage/" . $this->id . "/" . $this->name;
-
+        $this->url = $url ?? '/storage/' . $this->id . '/' . $this->name;
         return $this;
     }
-
 
     public function setMiddleware(?string $middleware = null): self
     {
@@ -80,12 +92,13 @@ class StorageEntry extends Model
 
     public function setOwnerType(?EOwnerType $ownerType = null): self
     {
-        if($ownerType === null)
-            $ownerType = EOwnerType::USER;
-
-        $this->ownerType = $ownerType;
+        $this->ownerType = $ownerType ?? EOwnerType::USER;
         return $this;
     }
+
+    // ----------------------------------------------------------------
+    // Getters
+    // ----------------------------------------------------------------
 
     public function getOwnerId(): ?int
     {
@@ -125,5 +138,22 @@ class StorageEntry extends Model
     public function getLastModified(): int
     {
         return $this->lastModified;
+    }
+
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
+
+    public function save(): bool
+    {
+        $this->ownerType = $this->ownerType->value ?? EOwnerType::USER->value;
+        return parent::save();
+    }
+
+    public function saveModel(): ?int
+    {
+        $this->ownerType = $this->ownerType->value ?? EOwnerType::USER->value;
+        return parent::saveModel();
     }
 }
