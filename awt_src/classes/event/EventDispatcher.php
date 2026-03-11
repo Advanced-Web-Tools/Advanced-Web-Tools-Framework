@@ -66,4 +66,17 @@ class EventDispatcher
 
         return $result;
     }
+
+    /**
+     * Removes all listeners for a specific event.
+     * @param string $eventName
+     * @return void
+     */
+    public function removeListeners(string $eventName): void
+    {
+        if(isset($this->listeners[$eventName]))
+            unset(
+                $this->listeners[$eventName]
+            );
+    }
 }
