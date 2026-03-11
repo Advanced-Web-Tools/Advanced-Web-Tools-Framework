@@ -1,7 +1,9 @@
 <?php
 
+ini_set('max_execution_time', 0);
+
 if (PHP_SAPI !== 'cli')
-    die("This script can only be run from a command line.");
+    die("This can only be run from a command line.");
 
 $_SERVER['REQUEST_URI'] = '/CLI/';
 

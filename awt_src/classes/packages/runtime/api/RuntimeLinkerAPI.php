@@ -33,8 +33,8 @@ abstract class RuntimeLinkerAPI extends RuntimeAPI
      * @param string $name The name of the link.
      * @param string $pathFromRoot The path to the resource from the root of the package.
      */
-    final public function createLink(string $name, string $pathFromRoot): void
+    final public function createLink(string $name, string $path): void
     {
-        $this->links[$name] = $this->runtimePath . $pathFromRoot;
+        $this->links[$name] = $path;
     }
 }
