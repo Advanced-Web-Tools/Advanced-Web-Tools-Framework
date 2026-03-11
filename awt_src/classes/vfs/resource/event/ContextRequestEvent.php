@@ -6,9 +6,8 @@ use event\interfaces\IEvent;
 
 class ContextRequestEvent implements IEvent
 {
+    public string $context;
 
-    public ContextRequestEvent $context;
-    public string $contextName;
     /**
      * @inheritDoc
      */

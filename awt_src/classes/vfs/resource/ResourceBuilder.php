@@ -2,44 +2,41 @@
 
 namespace vfs\resource;
 
-use object\ObjectCollection;
-use vfs\resource\enums\EResourceType;
-
 class ResourceBuilder
 {
-    public ResourceEntry $root;
-    private ResourceCache $cache;
+    private string $path;
+    private array $resources = [];
 
-    public function __construct()
+
+    public function __construct(string $path = PACKAGES)
     {
-        $this->cache = new ResourceCache();
-        $this->root  = new ResourceEntry("root", PACKAGES, EResourceType::Directory);
-        $this->scanDirectory(PACKAGES, $this->root);
+        $this->path = $path;
     }
 
-    private function scanDirectory(string $path, ResourceEntry $parent): void
+    public function build(): array
     {
-        $scanned = array_slice(scandir($path), 2);
+        $this->resources = self::directoryIterator($this->path, true);
+        return $this->resources;
+    }
 
-        foreach ($scanned as $item) {
-            $fullPath = $path . DIRECTORY_SEPARATOR . $item;
-            $type     = is_dir($fullPath) ? EResourceType::Directory : EResourceType::File;
-            $entry    = new ResourceEntry($item, $fullPath, $type);
-            $parent->addChild($entry);
+    public static function directoryIterator(string $path, bool $recursive = false): array
+    {
+        $scanned = [];
 
-            if ($type === EResourceType::Directory) {
-                $this->scanDirectory($fullPath, $entry);
+        if(!is_dir($path)) return $scanned;
+
+        $files = array_diff(scandir($path), ['.', '..']);
+
+        if(!$recursive) return $files;
+
+        foreach($files as $file) {
+            if(is_dir($path . DIRECTORY_SEPARATOR . $file)) {
+                $scanned[$file] = self::directoryIterator($path . DIRECTORY_SEPARATOR . $file, true);
+            } else {
+                $scanned[$file] =  $path . DIRECTORY_SEPARATOR . $file;
             }
         }
-    }
 
-    public function build(): ObjectCollection
-    {
-        return $this->root->children;
-    }
-
-    public function cache(): void
-    {
-        $this->cache->write($this->root->__toArray());
+        return $scanned;
     }
 }
