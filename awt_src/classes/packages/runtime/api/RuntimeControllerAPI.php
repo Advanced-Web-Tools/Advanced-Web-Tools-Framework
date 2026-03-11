@@ -2,6 +2,7 @@
 
 namespace packages\runtime\api;
 
+use context\Context;
 use controller\Controller;
 use Exception;
 use object\ObjectFactory;
@@ -18,6 +19,7 @@ abstract class RuntimeControllerAPI extends RuntimeAPI
 {
     public array $controllers;
 
+    protected Context $context;
     /**
      * Sets up the environment for the runtime controller.
      *
@@ -38,12 +40,16 @@ abstract class RuntimeControllerAPI extends RuntimeAPI
      */
     final public function getController(string $name): ObjectFactory|Controller
     {
+        $this->context = new Context($this->runtimePath, $this->name, $this->id);
         if($this->controllers[$name] instanceof ObjectFactory) {
             $this->controllers[$name]->addProperty("packageName", $this->name);
+            $this->controllers[$name]->addMethodCall("setContext")->addMethodArgs("setContext", [$this->context]);
             return $this->controllers[$name];
         }
         
         $this->controllers[$name]->packageName = $this->name;
+        $this->controllers[$name]->setContext($this->context);
+
         return $this->controllers[$name];
     }
 

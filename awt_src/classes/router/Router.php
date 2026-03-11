@@ -1,12 +1,14 @@
 <?php
 namespace router;
 
+use context\events\RespondContextEvent;
 use controller\Controller;
 use event\EventDispatcher;
 use middleware\IMiddleware;
 use object\ObjectFactory;
 use redirect\Redirect;
 use router\events\RouteEnterEvent;
+use vfs\resource\event\ContextRequestEvent;
 use view\View;
 
 /**
@@ -177,6 +179,11 @@ class Router
 
         if($this->controller instanceof ObjectFactory) {
             $this->controller = $this->controller->create();
+        }
+
+        $context = $this->controller->getContext();
+        if($context !== null) {
+            $this->eventDispatcher->addListener('context.get', new RespondContextEvent($context));
         }
 
 
