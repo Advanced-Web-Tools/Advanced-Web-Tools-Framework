@@ -325,7 +325,7 @@ abstract class Model extends DatabaseManager
             unset($save[$value]);
         }
 
-        if($this->model_id === null)
+        if($this->model_id === null && $this->model_source === null)
             $this->model_source = $this->inferTableName();
 
         return $this->table($this->model_source)->insert($save)->executeInsert();
