@@ -1,5 +1,5 @@
 
-<img width="1521" height="552" alt="Framework-Banner-Pink" src="https://github.com/user-attachments/assets/0aff0cb0-4993-446b-b66e-f6d18350cd45" />
+<img width="500" height="auto" alt="Framework-Banner-Pink" src="https://github.com/user-attachments/assets/0aff0cb0-4993-446b-b66e-f6d18350cd45" style="margin:auto 0;" />
 
 ## Description
 
