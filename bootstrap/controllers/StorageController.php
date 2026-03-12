@@ -12,6 +12,8 @@ use vfs\storage\StorageRepository;
 class StorageController extends Controller
 {
 
+    public string $controllerName = 'DefaultStorageController';
+
     /**
      * @inheritDoc
      */

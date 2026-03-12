@@ -37,7 +37,7 @@ final class RouterManager
      */
     public function addRouter(Router $route): void
     {
-        if ($route->name === null) {
+        if ($route->name === null || trim($route->name) === '') {
             $route->name = count($this->routesName);
         }
 

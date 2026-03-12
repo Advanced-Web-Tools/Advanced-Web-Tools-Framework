@@ -3,7 +3,11 @@
 /**
  * Root directory of the application.
  */
-define("ROOT", explode("public", $_SERVER["DOCUMENT_ROOT"])[0]);
+if (defined('BASE_PATH')) {
+    define("ROOT", rtrim(BASE_PATH, DIRECTORY_SEPARATOR));
+} else {
+    define("ROOT", dirname(__DIR__, 2));
+}
 /**
  * Source directory for the awt, specifically the 'awt_src' folder.
  */

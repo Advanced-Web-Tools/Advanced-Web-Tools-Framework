@@ -17,6 +17,9 @@ foreach ($defaultRouters as $route) {
     $routerManager->addRouter($route);
 }
 
+if (PHP_SAPI === 'cli')
+    return $routerManager;
+
 $page = $routerManager->startRouter();
 
 try {
@@ -37,3 +40,8 @@ try {
 }
 
 echo $doc;
+
+$redirect = new Redirect();
+$redirect->setLast();
+
+return $routerManager;

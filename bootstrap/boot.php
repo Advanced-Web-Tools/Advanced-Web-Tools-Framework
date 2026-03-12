@@ -1,5 +1,5 @@
 <?php
-require_once  BASE_PATH . '/awt_data/config/awt_config.php';
+require_once CONFIG . 'awt_config.php';
 require_once FUNCTIONS . 'awt_autoLoader.fun.php';
 require_once FUNCTIONS . "awt_getDomain.fun.php";
 require_once FUNCTIONS . 'ErrorHandler.fun.php';
@@ -33,8 +33,8 @@ if(defined("DEV")) {
 
 $loader = require_once  __DIR__ . '/packages/loader.php';
 
-require_once __DIR__ . '/routes/router.php';
+$routerManager = require_once __DIR__ . '/routes/router.php';
 
-$redirect = new Redirect();
-$redirect->setLast();
+if(PHP_SAPI === 'cli')
+    require_once __DIR__ . '/cli/handler.php';
 
