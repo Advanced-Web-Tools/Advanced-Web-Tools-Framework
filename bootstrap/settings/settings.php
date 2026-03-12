@@ -1,5 +1,4 @@
 <?php
-
 use setting\Settings;
 use setting\Config;
 $settings = new Settings();
@@ -12,3 +11,5 @@ if (defined("SETT_AWT_WEBSITE_NAME")) {
 } else {
     define("WEB_NAME", "AWT");
 }
+
+return $settings;

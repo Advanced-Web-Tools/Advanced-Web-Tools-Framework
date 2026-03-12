@@ -3,10 +3,10 @@
 namespace view;
 
 use DOMDocument;
+use Exception;
 use render\events\RenderReadyEvent;
 use render\Render;
 use render\TemplateEngine\BladeOne;
-use render\TemplateEngine\Data\DataFunction;
 use Throwable;
 
 class View extends Render
@@ -73,7 +73,7 @@ class View extends Render
         $this->loadTemplate();
         $this->createBundleObjects();
         try {
-            $parser = new BladeOne($this->viewDirectory, CACHE, BladeOne::MODE_AUTO);
+            $parser = new BladeOne($this->viewDirectory, COMPILED, BladeOne::MODE_AUTO);
             $parser->setFileExtension(".awt.php");
 
             $parser->addAssetDict(0, $this->localAssetPath);

@@ -52,22 +52,25 @@ class StorageController extends Controller
         $cached = $cachePool->getCache($uri);
 
         if (is_array($cached)) {
-            // Cache hit: Use the stored path
             $resourceEntry = $cached[0];
+            if(empty($resourceEntry))
+                return Response::make(404);
         } else {
+            $cachePool->createConfig(ECacheValidation::MODIFIED, [PACKAGES .  $params["package"]]);
             $package = $params["package"] ?? 'System';
             $file = $params["file"] ?? '';
 
             $resource = new Resource($package);
             $resourceEntry = $resource->get($file);
 
-            // If it doesn't exist, return 404 immediately (and don't cache a 404 here)
+            // If it doesn't exist, return 404
             if ($resourceEntry === null) {
+                $cachePool->setCache($uri, []);
                 return Response::make(404);
             }
 
-            $cachePool->createConfig(ECacheValidation::MODIFIED, [str_replace($file, '', $resourceEntry)])
-                ->setCache($uri, [$resourceEntry]);
+
+            $cachePool->createConfig(ECacheValidation::MODIFIED, [str_replace($file, '', $resourceEntry)])->setCache($uri, [$resourceEntry]);
         }
 
         // 2. Return the file response

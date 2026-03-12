@@ -6,7 +6,7 @@ function handle_fatal(): void
 {
     $last = error_get_last();
     if ($last && $last['type'] === E_ERROR) {
-        $engine = new BladeOne(ROOT, CACHE, BladeOne::MODE_SLOW);
+        $engine = new BladeOne(PUBLIC_DIRECTORY, COMPILED, BladeOne::MODE_SLOW);
         $engine->setFileExtension(".awt.php");
 
         $data = DEBUG ? ["error" => $last['message']] : [];
