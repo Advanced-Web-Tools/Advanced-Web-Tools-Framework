@@ -3,6 +3,7 @@
 namespace cli\commands;
 
 use cli\interfaces\CLICommand;
+use object\ObjectFactory;
 
 class RoutesCommand implements CLICommand
 {
@@ -38,6 +39,7 @@ class RoutesCommand implements CLICommand
             'path' => "\033[1;32m",        // Green
             'action' => "\033[1;33m",      // Yellow
             'controller' => "\033[1;35m",  // Magenta
+            'lazy' => "\033[1;36m",
             'reset' => "\033[0m"
         ];
 
@@ -46,25 +48,32 @@ class RoutesCommand implements CLICommand
             'name' => 20,
             'path' => 100,
             'action' => 20,
-            'controller' => 25
+            'controller' => 25,
+            'lazy' => 25
         ];
 
 
         $this->lastResult = sprintf(
-            "%-{$colWidths['name']}s %-{$colWidths['path']}s %-{$colWidths['action']}s %-{$colWidths['controller']}s\n",
-            'Name', 'Path', 'Action', 'Controller'
+            "%-{$colWidths['name']}s %-{$colWidths['path']}s %-{$colWidths['action']}s %-{$colWidths['controller']}s %-{$colWidths['lazy']}s\n",
+            'Name', 'Path', 'Action', 'Controller', 'Lazy controller'
         );
         $this->lastResult .= str_repeat('-', array_sum($colWidths)) . PHP_EOL;
 
 
         foreach ($this->routes as $router => $route) {
             foreach ($route as $finalRoute) {
+
+                $lazyLoaded = false;
+                if($finalRoute->controller instanceof ObjectFactory)
+                    $lazyLoaded = true;
+
                 $this->lastResult .= sprintf(
-                    "%s%-{$colWidths['name']}s%s %s%-{$colWidths['path']}s%s %s%-{$colWidths['action']}s%s %s%-{$colWidths['controller']}s%s\n",
+                    "%s%-{$colWidths['name']}s%s %s%-{$colWidths['path']}s%s %s%-{$colWidths['action']}s%s %s%-{$colWidths['controller']}s%s %s%-{$colWidths['lazy']}s%s\n",
                     $colors['name'], $finalRoute->name, $colors['reset'],
                     $colors['path'], $finalRoute->path, $colors['reset'],
                     $colors['action'], $finalRoute->action, $colors['reset'],
-                    $colors['controller'], $finalRoute->controller->controllerName, $colors['reset']
+                    $colors['controller'], $finalRoute->controller->controllerName ?? "Unknown Controller", $colors['reset'],
+                    $colors['lazy'], $lazyLoaded ? 'Yes' : 'No', $colors['reset']
                 );
             }
         }
