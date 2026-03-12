@@ -1,69 +1,53 @@
-[![Logo](https://github.com/ElStefanos/Advanced-Web-Tools/assets/46761434/eb7d7fd1-dd8e-42a2-94d3-d45a7417ac25)](https://advancedwebtools.com)
-
+# Advanced Web Tools Framework
 
 ## Description
 
-Advanced Web Tools is a PHP-based Content Management System (CMS) project with a clear mission—to evolve into the fastest, most feature-rich, and developer-friendly CMS available. With a focus on speed, advanced functionality, and strict security measures, Advanced Web Tools CMS aims to redefine the standards of effective web content management.
-This is self-hosted software that is free for anyone to install. 
+Advanced Web Tools (AWT) is a high-performance, modular PHP framework for building scalable web applications. Built around a package-oriented architecture, AWT encourages developers to organize code into self-contained, reusable units - keeping projects maintainable as they grow.
 
-<br>
+### Never touch the core again!
 
-> **⚠️ Warning!** <br>Advanced Web Tools** is under active development, but is currently stable for use. Due to it being developed, there may be breaking changes at any time. Be careful and make sure you read change-logs before updates!
-
-<br>
-
-
+With AWT, you can focus on your application's unique logic and features while the framework quietly handles routing, database access, and security behind the scenes. The result is a codebase that stays clean, maintainable, and easy to extend — with up to 90% of the framework's built-in functionality replaceable or overridable through custom packages alone.
+Unlike monolithic frameworks such as Laravel or Symfony, AWT operates as a micro-kernel: a thin, stable core that gets out of your way. You can build and deploy full applications without ever modifying the framework itself.
 ## Features
 
-- **Themes**: Customize the look and feel of your website with themes.
-- **Plugins**: Extend the functionality of Advanced Web Tools CMS with a range of plugins.
-- **DAC (Database Access Control)**: Implement stricter security through Database Access Control.
-- **Page Caching**: Optimize performance with built-in page caching.
-- **Theme Customization**: Customize your website in just few clicks.
-- **Page Editor**: Easily edit and manage your web pages with the intuitive page editor.
-- **Media**: Seamlessly handle and organize media content within the CMS.
-- **Online Marketplace**: Explore and integrate third-party extensions through our online marketplace.
+- **Modular Package System** - Extend the framework and structure your codebase using the `awt_packages` directory, with clear boundaries between concerns.
+- **Advanced Routing** - A robust routing manager with middleware support and lazy-loaded controllers for optimal performance.
+- **Database Management** - A fluent database layer with a Query Builder, caching support, and built-in query debugging.
+- **CLI Utility** - A dedicated CLI tool (`awt`) for managing routes and packages, and running maintenance tasks.
+- **Event Dispatcher** - Decouple application logic with a powerful event-driven system.
+- **Singleton-Ready Objects** - Register long-lived objects once and reuse them throughout your application, saving memory and reducing execution overhead.
+- **Virtual File System (VFS)** - An abstraction layer for file system operations, improving both flexibility and security.
+- **Pre-integrated Assets** - Ships with Bootstrap, Font Awesome, and jQuery included out of the box.
+- **Controllers** - First-class controller support for organized, reusable request handling.
+- **ORM** - A powerful Object-Relational Mapper for expressive, intuitive database interactions.
+- **Migration System** - Manage database schema changes with a straightforward migration workflow.
+- **Blade Templating Engine** - A clean, expressive templating engine for generating dynamic HTML content.
+- **Context Switching** - AWT automatically manages execution context as it moves between packages, with a simple API to access the current package at any time.
+- **Caching** - Cache data at any layer to reduce database load and improve response times.
+- **Fully Object-Oriented** - Built from the ground up with OOP principles, ensuring clean, predictable, and extensible code.
 
-## Installation
+## Work in Progress
 
-Prerequisites:
+- Comprehensive documentation and developer guides
+- Expanded library of built-in CLI commands
+- Enhanced security modules and automated testing framework
+- Remote package installation system
+- Improved error handling and structured logging
+- Route and controller caching
 
-1. A web server (Apache or NGINX)
-2. A database (MySQL, MariaDB etc..)
-3. Internet connection (I feel stupid for mentioning this....) 
+## Notes
 
-If you don't have anything from above (besides Internet). Refer to one of the guides below on how to quickly setup your LAMP stack:
+- **PHP Version** - Requires PHP 8.x or higher.
+- **Configuration** - Core settings are managed via `awt_data/config/awt_config.php`.
+- **Database** - Configure your database connection in `awt_data/config/awt_db.php`. Relational databases are currently supported.
+- **Public Directory** - Point your web server's document root to the `public` folder for proper routing and security.
 
-**Linux**:  [https://www.digitalocean.com/community/tutorials/how-to-install-lamp-stack-on-ubuntu](https://www.digitalocean.com/community/tutorials/how-to-install-lamp-stack-on-ubuntu)
+## Coming Soon
 
-**Windows**: [https://www.ionos.com/digitalguide/server/tools/xampp-tutorial-create-your-own-local-test-server/](https://www.ionos.com/digitalguide/server/tools/xampp-tutorial-create-your-own-local-test-server/)
+- **Asynchronous Server** - Support for async request handling, enabling faster response times and improved scalability.
+- **Request-Informed Runtime** - On subsequent requests, only the relevant controllers will execute - skipping full package initialization for a leaner runtime.
+- **WebSockets** - Real-time, bidirectional communication via WebSocket support.
 
-<br>
+## Maintainers
 
-> **⚠️ Warning!** <br>These instructional materials are designed to provide fundamental guidance. For individuals seeking to establish a website with robust security measures, we strongly advocate procuring professional hosting services. These services typically offer comprehensive support and infrastructure tailored to safeguarding online assets effectively.
-
-<br>
-
-And finally:
-
-1. **Download**:  Obtain the latest AWT-Installer from our [GitHub repository](https://github.com/ElStefanos/Advanced-Web-Tools/releases/latest).
-
-2. **Database**:  Make sure there is at least one empty database present (if you are unsure how to create one, contact your hosting provider or refer to this documentation if you are self hosting).
-
-3. **Extract**: Unzip the downloaded file to your desired location on your server.
-
-4. **Drag and Drop**: Simply move the CMS files into your web server's root directory.
-
-5. **Setup**: Navigate to your website's URL, and the installation wizard will guide you through the setup process.
-
-That's it! You're now ready to experience the power and flexibility of Advanced Web Tools CMS.
-
-### Documentation
-
-Improvements to the documentation are always valuable. If you find areas that need clarification or have ideas to enhance the documentation, feel free to submit a pull request.
-
-### Feature Requests
-
-If you have ideas for new features, share them by opening a feature request on our [GitHub repository](https://github.com/ElStefanos/Advanced-Web-Tools/). We'd love to hear your thoughts.
-
-Thank you for considering contributing to Advanced Web Tools CMS! Together, we can make it even better.
+- ElStefanos
