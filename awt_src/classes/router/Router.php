@@ -7,6 +7,7 @@ use event\EventDispatcher;
 use middleware\IMiddleware;
 use object\ObjectFactory;
 use redirect\Redirect;
+use response\Response;
 use router\events\RouteEnterEvent;
 use vfs\resource\event\ContextRequestEvent;
 use view\View;
@@ -169,7 +170,7 @@ class Router
      * @return View|Redirect The result of the controller action, either a View or Redirect instance.
      * @throws \ReflectionException
      */
-    public function route(array $params = []): View|Redirect
+    public function route(array $params = []): View|Redirect|Response
     {
 
         if($this->middleware !== null) {

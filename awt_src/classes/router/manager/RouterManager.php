@@ -3,6 +3,7 @@ namespace router\manager;
 
 use event\EventDispatcher;
 use redirect\Redirect;
+use response\Response;
 use router\Router;
 use view\View;
 
@@ -96,7 +97,7 @@ final class RouterManager
      *
      * @return View|Redirect The result of the route action, either a View or Redirect instance.
      */
-    public function startRouter(): View|Redirect
+    public function startRouter(): View|Redirect|Response
     {
 
         if($this->currentPath === '/')

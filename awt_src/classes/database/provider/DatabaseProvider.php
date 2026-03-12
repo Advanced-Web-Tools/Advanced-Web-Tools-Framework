@@ -2,7 +2,7 @@
 
 namespace database\provider;
 
-require ROOT . '/awt_db.php';
+require CONFIG . '/awt_db.php';
 
 use database\interface\IProvider;
 use PDO;
