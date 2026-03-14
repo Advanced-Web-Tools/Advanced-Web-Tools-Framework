@@ -3,6 +3,7 @@
 namespace packages\runtime\handler;
 
 use cli\CLIHandler;
+use context\events\RespondContextEvent;
 use event\EventDispatcher;
 use Exception;
 use object\ObjectHandler;
@@ -36,6 +37,7 @@ class RuntimeHandler extends RuntimeExceptions
     public array $routers;
     public array $sharedObjects;
     public ContextSwitchEvent $vfsContext;
+    public RespondContextEvent $respondContext;
 
     public CLIHandler $CLIHandler;
 

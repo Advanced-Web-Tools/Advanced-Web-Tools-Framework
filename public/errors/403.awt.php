@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ WEB_NAME }} | Server error</title>
+    <title>{{ WEB_NAME }} | Access Forbidden</title>
 
     <style>
 
@@ -20,7 +20,7 @@
 
         .container {
             text-align: center;
-            max-width: 500px;
+            max-width: 520px;
             padding: 40px;
             background: #2b2b2b;
             border-radius: 10px;
@@ -28,15 +28,22 @@
         }
 
         .error-code {
-            font-size: 70px;
+            font-size: 90px;
             font-weight: bold;
             color: #007bff;
             margin-bottom: 10px;
+            letter-spacing: 3px;
+        }
+
+        .icon {
+            font-size: 42px;
+            margin-bottom: 10px;
+            opacity: 0.8;
         }
 
         h1 {
             margin: 0;
-            font-size: 28px;
+            font-size: 26px;
         }
 
         p {
@@ -83,6 +90,10 @@
             color: #777;
         }
 
+        a {
+            text-decoration: none;
+        }
+
     </style>
 </head>
 
@@ -90,22 +101,23 @@
 
 <div class="container">
 
-    <div class="error-code">500</div>
+    <div class="error-code">403</div>
+    <div class="icon">🔒</div>
 
-    <h1>Server Error</h1>
+    <h1>Access Forbidden</h1>
 
     <p>
-        Something unexpected happened on our side.<br>
-        The issue has likely been logged and we’re looking into it.
+        You don’t have permission to access this resource.<br>
+        If you believe this is a mistake, please contact the administrator.
     </p>
 
     <div class="buttons">
         <button onclick="history.back()">Go Back</button>
-        <button onclick="location.reload()" class="secondary">Retry</button>
+        <a href="{{ HOSTNAME }}"><button class="secondary">Home Page</button></a>
     </div>
 
     <div class="footer">
-        {{ WEB_NAME }} • If this keeps happening please contact support
+        {{ WEB_NAME }} • Permission required
     </div>
 
 </div>

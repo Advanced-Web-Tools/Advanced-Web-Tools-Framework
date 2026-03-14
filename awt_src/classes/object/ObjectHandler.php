@@ -3,6 +3,8 @@
 namespace object;
 
 use Exception;
+use object\exceptions\ObjectHandlerException;
+use response\Response;
 
 class ObjectHandler
 
@@ -32,7 +34,16 @@ class ObjectHandler
             $reflection = new \ReflectionClass($className);
 
             if (!$reflection->isAbstract()) {
-                return $reflection->newInstance();
+                try {
+                    return $reflection->newInstance();
+                } catch (\Throwable $e) {
+                    if(DEBUG) {
+                        throw new ObjectHandlerException($e);
+                    } else {
+                        Response::make(500, "An error has occurred")->send();
+                    }
+                }
+
             }
         }
 

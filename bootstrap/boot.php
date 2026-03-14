@@ -22,9 +22,6 @@ $eventDispatcher = require_once __DIR__ . '/event/dispatcher.php';
 
 define("HOSTNAME", getDomainName());
 
-set_error_handler("handle_fatal");
-
-
 $shared["AWT"]["Settings"] = $settings;
 
 if(defined("DEV")) {
