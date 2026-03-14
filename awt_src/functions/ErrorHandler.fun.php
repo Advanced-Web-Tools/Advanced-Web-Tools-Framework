@@ -75,8 +75,3 @@ register_shutdown_function(function () {
     }
 });
 
-register_shutdown_function(function () {
-    $error = error_get_last();
-    handle_exception(new \Exception($error['message'], $error['type']));
-});
-

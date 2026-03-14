@@ -4,6 +4,7 @@ namespace database\provider;
 
 require CONFIG . '/awt_db.php';
 
+use database\exceptions\ProviderException;
 use database\interface\IProvider;
 use PDO;
 use PDOException;
@@ -25,6 +26,9 @@ class DatabaseProvider implements IProvider
 {
     private PDO $pdo;
 
+    /**
+     * @throws ProviderException
+     */
     public function __construct()
     {
         global $shared;
@@ -39,7 +43,7 @@ class DatabaseProvider implements IProvider
 
                 $shared['DBEngine']['PDO'] = $pdo;
             } catch (PDOException $e) {
-                throw new RuntimeException('Database connection failed: ' . $e->getMessage(), 0, $e);
+                throw new ProviderException("Default", $e);
             }
         }
 
@@ -50,6 +54,7 @@ class DatabaseProvider implements IProvider
      * {@inheritdoc}
      *
      * Integers are bound with PDO::PARAM_INT; everything else with PARAM_STR.
+     * @throws ProviderException
      */
     public function execute(string $sql, array $bindings = []): PDOStatement
     {
@@ -65,15 +70,7 @@ class DatabaseProvider implements IProvider
         } catch (PDOException $e) {
             $stmt->closeCursor();
 
-            if (defined('DEBUG') && DEBUG) {
-                throw new RuntimeException(
-                    "Query failed: {$e->getMessage()}\nSQL: {$sql}",
-                    0,
-                    $e
-                );
-            }
-
-            throw $e;
+            throw new ProviderException("Default", $e);
         }
 
         return $stmt;

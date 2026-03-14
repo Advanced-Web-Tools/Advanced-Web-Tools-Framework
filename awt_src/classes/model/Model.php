@@ -3,6 +3,7 @@
 namespace model;
 
 use database\DatabaseManager;
+use model\exceptions\ModelCreationException;
 use model\interfaces\IRelationBelongs;
 use model\interfaces\IRelationHasMany;
 use model\interfaces\IRelationWith;
@@ -48,6 +49,7 @@ abstract class Model extends DatabaseManager
      * @param string $column Optional. The column name used to match the ID. Defaults to 'id' if not provided.
      *
      * @return void
+     * @throws ModelCreationException
      */
     final public function selectByID(?int $id, string $table = '', string $column = ''): void
     {
@@ -79,9 +81,7 @@ abstract class Model extends DatabaseManager
             $this->loadHasMany($row);
 
         } catch (Throwable $e) {
-            if (defined('DEBUG') && DEBUG) {
-                die($e->getMessage());
-            }
+            throw new ModelCreationException($e);
         }
     }
 
