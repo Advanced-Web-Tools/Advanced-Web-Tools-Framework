@@ -14,8 +14,6 @@ try {
 } catch (Exception $e) {
     if(DEBUG) {
         throw($e);
-    } else {
-        die("An error has occurred");
     }
 }
 

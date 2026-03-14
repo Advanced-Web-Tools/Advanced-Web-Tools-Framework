@@ -2,6 +2,8 @@
 
 namespace packages\manager\loader;
 
+use context\Context;
+use context\events\RespondContextEvent;
 use Exception;
 use object\ObjectHandler;
 use packages\manager\PackageManager;
@@ -87,6 +89,8 @@ final class Loader extends RuntimeHandler
 
                 $this->loaded[$this->runtime->name] = $this->runtime;
             }
+
+            $this->eventDispatcher->removeListeners("context.get");
         }
 
     }
@@ -186,6 +190,8 @@ final class Loader extends RuntimeHandler
      */
     public function extractPackageObject(Runtime $runtime): array
     {
+        $contextEventRequest = new RespondContextEvent(new Context(PACKAGES . $runtime->name, $runtime->name, $runtime->getId()));
+        $this->eventDispatcher->addListener("context.get", $contextEventRequest);
         $className = ObjectHandler::createObjectFromFile(PACKAGES . str_replace(" ", "", $runtime->name) . DIRECTORY_SEPARATOR . "main.php");
 
         if (is_subclass_of($className, RuntimeAPI::class)) {
