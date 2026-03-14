@@ -4,6 +4,7 @@ namespace model;
 
 use database\DatabaseManager;
 use model\exceptions\ModelCreationException;
+use model\exceptions\ModelCRUDException;
 use model\interfaces\IRelationBelongs;
 use model\interfaces\IRelationHasMany;
 use model\interfaces\IRelationWith;
@@ -293,6 +294,7 @@ abstract class Model extends DatabaseManager
      * update operation on the corresponding database table.
      *
      * @return bool True if the update operation was successful, false otherwise.
+     * @throws ModelCRUDException
      */
 
     public function save(): bool
@@ -309,7 +311,12 @@ abstract class Model extends DatabaseManager
             unset($update[$value]);
         }
 
-        return $this->table($this->model_source)->where($where)->update($update);
+        try {
+            return $this->table($this->model_source)->where($where)->update($update);
+        } catch (Throwable $e) {
+            throw new ModelCRUDException($e);
+        }
+
     }
 
     /**
@@ -317,6 +324,7 @@ abstract class Model extends DatabaseManager
      * removing blacklisted parameters, and inserting it into the specified table.
      *
      * @return bool True if the model was successfully saved, false otherwise.
+     * @throws ModelCRUDException
      */
     public function saveModel(): int|null
     {
@@ -328,7 +336,11 @@ abstract class Model extends DatabaseManager
         if($this->model_id === null && $this->model_source === null)
             $this->model_source = $this->inferTableName();
 
-        return $this->table($this->model_source)->insert($save)->executeInsert();
+        try {
+            return $this->table($this->model_source)->insert($save)->executeInsert();
+        } catch (Throwable $e) {
+            throw new ModelCRUDException($e);
+        }
     }
 
     /**
@@ -336,6 +348,7 @@ abstract class Model extends DatabaseManager
      * The identifier column is determined by $id_column, defaulting to "id" if not set.
      *
      * @return bool True if the model was successfully deleted, false otherwise.
+     * @throws ModelCRUDException
      */
     public function deleteModel(): bool
     {
@@ -347,10 +360,17 @@ abstract class Model extends DatabaseManager
         if($this->model_source === null)
             $this->model_source = $this->inferTableName();
 
-        return $this->table($this->model_source)->where($where)->delete();
+        try {
+          return $this->table($this->model_source)->where($where)->delete();
+        } catch (Throwable $e) {
+            throw new ModelCRUDException($e);
+        }
     }
 
 
+    /**
+     * @throws ModelCRUDException
+     */
     public function find(string $column, mixed $value, ?string $source = null): array
     {
         $database = new DatabaseManager();
@@ -358,7 +378,11 @@ abstract class Model extends DatabaseManager
         if ($source === null)
             $source = $this->model_source;
 
-        return $database->table($source)->select()->where([$column => $value])->get();
+        try {
+            return $database->table($source)->select()->where([$column => $value])->get();
+        } catch (Throwable $e) {
+            throw new ModelCRUDException($e);
+        }
     }
 
 
