@@ -28,4 +28,14 @@ class PackageManifestFacade
     {
         return $this->service->buildPackage();
     }
+
+    public function getReader(): IManifestReader
+    {
+        return $this->reader;
+    }
+
+    public function getService(): IManifestService
+    {
+        return $this->service;
+    }
 }
