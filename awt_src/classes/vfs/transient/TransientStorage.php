@@ -3,8 +3,10 @@
 namespace vfs\transient;
 
 use vfs\transient\enums\ETransientType;
+use vfs\transient\interfaces\ITransientStorage;
+use vfs\transient\interfaces\ITransientStorageEntry;
 
-class TransientStorage
+class TransientStorage implements ITransientStorage
 {
     private string $currentPool;
     private string $subPool;
@@ -19,8 +21,8 @@ class TransientStorage
         ];
 
         foreach ($this->pools as $pool) {
-            if (!is_dir($pool)) {
-                mkdir($pool, 0755, true);
+            if (!is_dir($pool) && !mkdir($pool, 0755, true) && !is_dir($pool)) {
+                throw new \RuntimeException(sprintf('Directory "%s" was not created', $pool));
             }
         }
 
@@ -40,8 +42,8 @@ class TransientStorage
 
         $path = $this->currentPool . $this->subPool;
 
-        if (!is_dir($path)) {
-            mkdir($path, 0755, true);
+        if (!is_dir($path) && !mkdir($path, 0755, true) && !is_dir($path)) {
+            throw new \RuntimeException(sprintf('Directory "%s" was not created', $path));
         }
 
         $this->currentPool = $path . DIRECTORY_SEPARATOR;
@@ -49,7 +51,7 @@ class TransientStorage
         return $this;
     }
 
-    public function getFile(string $name): ?TransientStorageEntry
+    public function getFile(string $name): ?ITransientStorageEntry
     {
         $path = $this->currentPool . $name;
 
@@ -64,7 +66,7 @@ class TransientStorage
         string $name,
         ETransientType $type,
         string|array $content
-    ): TransientStorageEntry {
+    ): ITransientStorageEntry {
 
         $path = $this->currentPool . $name . "." . $type->value;
 
@@ -74,43 +76,43 @@ class TransientStorage
         return $entry;
     }
 
-    public function deleteFile(TransientStorageEntry $file): bool
+    public function deleteFile(ITransientStorageEntry $file): bool
     {
         return $file->delete();
     }
 
     public function renameFile(
-        TransientStorageEntry $file,
+        ITransientStorageEntry $file,
         string $newName
-    ): TransientStorageEntry {
+    ): ITransientStorageEntry {
 
-        $newPath = dirname($file->path) . DIRECTORY_SEPARATOR . $newName;
+        $newPath = dirname($file->getPath()) . DIRECTORY_SEPARATOR . $newName;
 
-        rename($file->path, $newPath);
+        rename($file->getPath(), $newPath);
 
         return new TransientStorageEntry($newName, $newPath);
     }
 
     public function moveFile(
-        TransientStorageEntry $file,
+        ITransientStorageEntry $file,
         string $newPool
-    ): TransientStorageEntry {
+    ): ITransientStorageEntry {
 
-        $target = $this->pools[$newPool] . DIRECTORY_SEPARATOR . basename($file->path);
+        $target = $this->pools[$newPool] . DIRECTORY_SEPARATOR . basename($file->getPath());
 
-        rename($file->path, $target);
+        rename($file->getPath(), $target);
 
         return new TransientStorageEntry(basename($target), $target);
     }
 
     public function copyFile(
-        TransientStorageEntry $file,
+        ITransientStorageEntry $file,
         string $newName
-    ): TransientStorageEntry {
+    ): ITransientStorageEntry {
 
         $target = $this->currentPool . $newName;
 
-        copy($file->path, $target);
+        copy($file->getPath(), $target);
 
         return new TransientStorageEntry($newName, $target);
     }

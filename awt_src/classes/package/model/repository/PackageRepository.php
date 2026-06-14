@@ -4,6 +4,7 @@ namespace package\model\repository;
 
 use database\DatabaseManager;
 use database\trait\DoNotCache;
+use package\manifest\reader\interfaces\IManifestReader;
 use package\model\repository\interfaces\IPackageRepository;
 
 class PackageRepository extends DatabaseManager implements IPackageRepository
@@ -41,4 +42,8 @@ class PackageRepository extends DatabaseManager implements IPackageRepository
         return $result ? array_merge($result, $this->append) : null;
     }
 
+    public function newPackage(IManifestReader $manifestReader): ?int
+    {
+        return $this->table('awt_package')->insert($manifestReader->getManifest())->executeInsert();
+    }
 }

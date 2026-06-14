@@ -2,6 +2,8 @@
 
 namespace package\model\repository\interfaces;
 
+use package\manifest\reader\interfaces\IManifestReader;
+
 interface IPackageRepository
 {
     public function getActive(): array;
@@ -11,4 +13,6 @@ interface IPackageRepository
     public function getAll(): array;
 
     public function getPackage(string $name): ?array;
+
+    public function newPackage(IManifestReader $manifestReader): ?int;
 }

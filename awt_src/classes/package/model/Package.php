@@ -195,7 +195,7 @@ class Package extends Model
     public function createDependencyCollection(): void
     {
         foreach ($this->dependencies as $dependency) {
-            $this->dependenciesCollection->add(Dependency::__fromArray($dependency));
+            $this->dependenciesCollection->add(Dependency::fromArray($dependency));
         }
     }
 

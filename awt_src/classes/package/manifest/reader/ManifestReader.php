@@ -5,10 +5,10 @@ namespace package\manifest\reader;
 use package\manifest\exceptions\ManifestReaderException;
 use package\manifest\reader\interfaces\IManifestReader;
 
-class ManifestReader implements IManifestReader
+readonly class ManifestReader implements IManifestReader
 {
-    public readonly string $package;
-    private readonly string $manifestPath;
+    public string $package;
+    private string $manifestPath;
 
     /**
      * @throws ManifestReaderException

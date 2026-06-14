@@ -2,6 +2,7 @@
 
 namespace cli\commands;
 
+use cli\commands\PackageManager\Install;
 use cli\interfaces\CLICommand;
 use packages\enums\EPackageStatus;
 use packages\installer\PackageInstaller;
@@ -50,7 +51,8 @@ class PackageManagerCommand implements CLICommand
                     $this->lastResult = "No path given.\nSpecify the path or URL to a zip package.\n";
                     return;
                 }
-                $this->install($pathOrId);
+                $installer = new Install($pathOrId);
+                $installer->install();
                 break;
 
             case 'remove':
@@ -93,7 +95,7 @@ class PackageManagerCommand implements CLICommand
             return;
         }
 
-        $tmpFile = tempnam(sys_get_temp_dir(), "awt_zip_") . ".zip";
+        $tmpFile = tempnam(TEMP, "awt_zip_") . ".zip";
 
         try {
             if (str_starts_with($path, 'http')) {

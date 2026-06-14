@@ -4,6 +4,8 @@ namespace vfs\cache;
 
 use vfs\cache\enums\ECacheValidation;
 use vfs\transient\enums\ETransientType;
+use vfs\transient\interfaces\ITransientStorage;
+use vfs\transient\interfaces\ITransientStorageEntry;
 use vfs\transient\TransientStorage;
 use vfs\transient\TransientStorageEntry;
 
@@ -15,7 +17,7 @@ class CachePool
 
     public ECacheValidation $cacheValidation;
 
-    private TransientStorage $transientStorage;
+    private ITransientStorage $transientStorage;
 
     public function __construct(string $pool)
     {
@@ -141,7 +143,7 @@ class CachePool
         return $this->transientStorage->deleteFile($entry);
     }
 
-    private function validate(TransientStorageEntry $entry, array $data): bool
+    private function validate(ITransientStorageEntry $entry, array $data): bool
     {
         return match ($this->cacheValidation) {
 
