@@ -23,23 +23,27 @@ readonly class PackageInstaller implements IPackageInstaller
     /**
      * @inheritDoc
      * @throws ManifestReaderException
+     * @throws \JsonException
      */
     public function install(): bool
     {
         $this->extractor->extract();
         $extractedBase = $this->extractor->getDestination();
 
-        $packageDir = $this->findPackageDir($extractedBase);
+//        $packageDir = $this->findPackageDir($extractedBase);
 
-        $manifestPath = $packageDir . DIRECTORY_SEPARATOR . 'manifest.json';
-        $manifest     = json_decode(file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+        $manifestPath = $extractedBase . DIRECTORY_SEPARATOR . 'manifest.json';
+        echo $extractedBase . PHP_EOL;
+        echo $manifestPath . PHP_EOL;
+
+        $manifest     = json_decode(file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         if ($manifest === null) {
             return false;
         }
 
         $verifyManifest  = new VerifyManifest($manifest);
-        $verifyStructure = new VerifyStructure($packageDir);
+        $verifyStructure = new VerifyStructure($extractedBase);
         $preparer        = new PrepareInstallation($verifyManifest, $verifyStructure);
 
         if (!$preparer->prepare()->verify()) {
@@ -53,12 +57,14 @@ readonly class PackageInstaller implements IPackageInstaller
             throw new RuntimeException("Failed to create package directory: {$destination}");
         }
 
-        $this->mover->setSource($packageDir);
+        $this->mover->setSource($extractedBase);
         $this->mover->setDestination($destination);
         $this->mover->move();
 
         $manifestReader = new ManifestReader($packageName);
-        $packageId      = $this->packageRepository->newPackage($manifestReader);
+        $forDb = $manifestReader->getManifest();
+        unset($forDb['dependencies']);
+        $packageId      = $this->packageRepository->newPackage($forDb);
 
         if ($packageId === null) {
             throw new RuntimeException("Failed to register package '{$packageName}' in the database.");

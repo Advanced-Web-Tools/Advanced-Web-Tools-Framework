@@ -2,6 +2,7 @@
 
 namespace vfs\storage;
 
+use model\exceptions\ModelCreationException;
 use model\Model;
 use vfs\storage\enums\EOwnerType;
 
@@ -19,11 +20,14 @@ class StorageEntry extends Model
     public ?string     $path;
     public ?string     $url;
     public ?int        $size;
-    public ?string     $middleware;
-    public ?int        $lastModified;
-    public ?int        $ownerId;
+    public ?string     $middleware = null;
+    public ?int        $lastModified = 0;
+    public ?int        $ownerId = null;
     public string|EOwnerType $ownerType;
 
+    /**
+     * @throws ModelCreationException
+     */
     public function __construct(?int $id = null)
     {
         parent::__construct();

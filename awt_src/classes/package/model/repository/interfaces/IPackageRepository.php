@@ -14,5 +14,5 @@ interface IPackageRepository
 
     public function getPackage(string $name): ?array;
 
-    public function newPackage(IManifestReader $manifestReader): ?int;
+    public function newPackage(array $data): ?int;
 }

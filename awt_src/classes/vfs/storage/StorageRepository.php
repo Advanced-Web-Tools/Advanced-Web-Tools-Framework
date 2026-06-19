@@ -3,6 +3,7 @@
 namespace vfs\storage;
 
 use database\DatabaseManager;
+use model\exceptions\ModelCRUDException;
 use vfs\storage\interfaces\IStorageRepository;
 use vfs\storage\enums\EOwnerType;
 
@@ -101,8 +102,12 @@ class StorageRepository implements IStorageRepository
         return new StorageEntry($rows[0]['id']);
     }
 
+    /**
+     * @throws ModelCRUDException
+     */
     public function create(StorageEntry $entry): StorageEntry
     {
+        var_dump($entry->getOwnerId());
         $id = $entry->saveModel();
         $entry->setModelId($id);
         $entry->setUrl();
@@ -110,11 +115,17 @@ class StorageRepository implements IStorageRepository
         return $entry;
     }
 
+    /**
+     * @throws ModelCRUDException
+     */
     public function update(StorageEntry $entry): bool
     {
         return $entry->save();
     }
 
+    /**
+     * @throws ModelCRUDException
+     */
     public function delete(StorageEntry $entry): bool
     {
         return $entry->deleteModel();

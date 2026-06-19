@@ -42,8 +42,9 @@ class PackageRepository extends DatabaseManager implements IPackageRepository
         return $result ? array_merge($result, $this->append) : null;
     }
 
-    public function newPackage(IManifestReader $manifestReader): ?int
+    public function newPackage(array $data): ?int
     {
-        return $this->table('awt_package')->insert($manifestReader->getManifest())->executeInsert();
+        $data["installation_date"] = date("Y-m-d H:i:s");
+        return $this->table('awt_package')->insert($data)->executeInsert();
     }
 }

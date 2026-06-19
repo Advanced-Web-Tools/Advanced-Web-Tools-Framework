@@ -2,7 +2,9 @@
 
 namespace package\model;
 
+use JsonException;
 use model\exceptions\ModelCreationException;
+use model\exceptions\ModelCRUDException;
 use model\Model;
 use object\ObjectCollection;
 use package\dependency\Dependency;
@@ -22,12 +24,12 @@ class Package extends Model
     public ?string $maximum_awt_version = null;
 
     // Status and type
-    public int $package_type = -1;
-    public bool $system = false;
+    public int $type = -1;
+    public bool $system_package = false;
 
     // License
     public ?string $license = null;
-    public ?string $licenseUrl = null;
+    public ?string $license_url = null;
 
     // Dependencies
     public array|string $dependencies = [];
@@ -91,14 +93,14 @@ class Package extends Model
         return $this->maximum_awt_version;
     }
 
-    public function getPackageType(): int
+    public function getType(): int
     {
-        return $this->package_type;
+        return $this->type;
     }
 
     public function getSystem(): bool
     {
-        return $this->system;
+        return $this->system_package;
     }
 
     public function getLicense(): ?string
@@ -108,7 +110,7 @@ class Package extends Model
 
     public function getLicenseUrl(): ?string
     {
-        return $this->licenseUrl;
+        return $this->license_url;
     }
 
     public function getDependencies(): ?array
@@ -162,14 +164,14 @@ class Package extends Model
         $this->maximum_awt_version = $maximum_awt_version;
     }
 
-    public function setPackageType(int $package_type): void
+    public function setType(int $type): void
     {
-        $this->package_type = $package_type;
+        $this->type = $type;
     }
 
-    public function setSystem(bool $system): void
+    public function setSystem(bool $system_package): void
     {
-        $this->system = $system;
+        $this->system_package = $system_package;
     }
 
     public function setLicense(?string $license): void
@@ -179,13 +181,14 @@ class Package extends Model
 
     public function setLicenseUrl(?string $licenseUrl): void
     {
-        $this->licenseUrl = $licenseUrl;
+        $this->license_url = $licenseUrl;
     }
 
     public function setDependencies(?array $dependencies): void
     {
-        if (!is_array($dependencies))
+        if (!is_array($dependencies)) {
             $dependencies = [];
+        }
 
 
         $this->dependencies = $dependencies;
@@ -199,6 +202,9 @@ class Package extends Model
         }
     }
 
+    /**
+     * @throws JsonException
+     */
     private function encodeDependencies(): void
     {
         if (is_array($this->dependencies)) {
@@ -206,12 +212,20 @@ class Package extends Model
         }
     }
 
+    /**
+     * @throws ModelCRUDException
+     * @throws JsonException
+     */
     public function saveModel(): int|null
     {
         $this->encodeDependencies();
         return parent::saveModel();
     }
 
+    /**
+     * @throws ModelCRUDException
+     * @throws JsonException
+     */
     public function save(): bool
     {
         $this->encodeDependencies();
