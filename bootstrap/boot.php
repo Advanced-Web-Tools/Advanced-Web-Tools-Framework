@@ -4,21 +4,22 @@ require_once FUNCTIONS . 'awt_autoLoader.fun.php';
 require_once FUNCTIONS . "awt_getDomain.fun.php";
 require_once FUNCTIONS . 'ErrorHandler.fun.php';
 
-use redirect\Redirect;
-
 global $defaultRouters;
 global $settings;
 global $eventDispatcher;
+
+$eventDispatcher = new \event\EventDispatcher();
+
 global $shared;
 global $loader;
 global $routerManager;
 
 spl_autoload_register();
 
-$settings       = require_once __DIR__ . '/settings/settings.php';
-$defaultRouters = require_once __DIR__ . '/routes/default.php';
-$routerManager  = require_once __DIR__ . '/routes/manager.php';
-$eventDispatcher = require_once __DIR__ . '/event/dispatcher.php';
+$settings       = require __DIR__ . '/settings/settings.php';
+$defaultRouters = require __DIR__ . '/routes/default.php';
+$routerManager  = require __DIR__ . '/routes/manager.php';
+$eventDispatcher = require __DIR__ . '/event/dispatcher.php';
 
 define("HOSTNAME", getDomainName());
 
@@ -28,9 +29,9 @@ if(defined("DEV")) {
     require_once  __DIR__ . '/dev.php';
 }
 
-$loader = require_once  __DIR__ . '/packages/loader.php';
+$loader = require __DIR__ . '/packages/loader.php';
 
-$routerManager = require_once __DIR__ . '/routes/router.php';
+$routerManager = require __DIR__ . '/routes/router.php';
 
 if(PHP_SAPI === 'cli')
     require_once __DIR__ . '/cli/handler.php';

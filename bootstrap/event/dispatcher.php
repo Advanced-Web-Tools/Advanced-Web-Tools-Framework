@@ -3,8 +3,7 @@ use event\EventDispatcher;
 use router\events\EDynamicRouteListener;
 
 global $routerManager;
-
-$eventDispatcher = new EventDispatcher();
+global $eventDispatcher;
 
 $dynamicRouteEvent = new EDynamicRouteListener();
 

@@ -3,8 +3,9 @@
 namespace vfs\transient;
 
 use vfs\transient\enums\ETransientType;
+use vfs\transient\interfaces\ITransientStorageEntry;
 
-class TransientStorageEntry
+class TransientStorageEntry implements ITransientStorageEntry
 {
     public string $name;
     public string $path;
@@ -86,6 +87,11 @@ class TransientStorageEntry
     public function getPath(): string
     {
         return $this->path;
+    }
+
+    public function getLastModified(): int
+    {
+        return $this->lastModified;
     }
 
     public function __toString(): string
