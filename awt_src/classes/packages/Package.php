@@ -31,6 +31,7 @@ class Package
     public ?string $licenseUrl = null;               // URL to the license details.
     public ?string $author = null;                   // Author of the package.
     public ?string $packagePath = null;              // Path to the package files.
+    public array $dependencies = [];
     public bool $systemPackage = false;              // Indicates if the package is a system package.
     public EPackageStatus $packageStatus = EPackageStatus::Disabled; // Current status of the package.
 

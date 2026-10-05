@@ -16,14 +16,14 @@ use vfs\storage\enums\EOwnerType;
 class StorageEntry extends Model
 {
     public ?int        $id;
-    public ?string     $name;
-    public ?string     $path;
-    public ?string     $url;
-    public ?int        $size;
+    public ?string     $name = null;
+    public ?string     $path = null;
+    public ?string     $url = null;
+    public ?int        $size = null;
     public ?string     $middleware = null;
     public ?int        $lastModified = 0;
     public ?int        $ownerId = null;
-    public string|EOwnerType $ownerType;
+    public string|EOwnerType $ownerType = EOwnerType::USER;
 
     /**
      * @throws ModelCreationException
@@ -35,7 +35,7 @@ class StorageEntry extends Model
         $this->id = $id;
         $this->model_source = 'awt_storage';
         if ($this->id !== null) {
-            $this->selectByID($this->id);
+            $this->selectByID($this->id, 'awt_storage');
         }
     }
 
@@ -111,7 +111,7 @@ class StorageEntry extends Model
 
     public function getOwnerType(): ?EOwnerType
     {
-        return $this->ownerType;
+        return $this->ownerType instanceof EOwnerType ? $this->ownerType : EOwnerType::from($this->ownerType);
     }
 
     public function getMiddleware(): ?string

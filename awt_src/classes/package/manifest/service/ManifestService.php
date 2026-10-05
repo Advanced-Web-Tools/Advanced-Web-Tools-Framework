@@ -18,7 +18,7 @@ class ManifestService implements IManifestService
     public function buildPackage(): Package
     {
         $manifest = $this->reader->getManifest();
-        $deps = $manifest['dependencies'];
+        $deps = $manifest['dependencies'] ?? [];
 
         if( !is_array($deps))
             $deps = [];
@@ -43,6 +43,6 @@ class ManifestService implements IManifestService
 
     public function buildDependency(array $data): Dependency
     {
-        return Dependency::__fromArray($data);
+        return Dependency::fromArray($data);
     }
 }

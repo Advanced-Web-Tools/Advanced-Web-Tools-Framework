@@ -102,7 +102,6 @@
 <div class="container">
 
     <div class="error-code">403</div>
-    <div class="icon">🔒</div>
 
     <h1>Access Forbidden</h1>
 

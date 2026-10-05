@@ -11,7 +11,8 @@ use cli\commands\PackageManagerCommand;
 use cli\commands\RoutesCommand;
 use cli\commands\VersionCommand;
 
-$handler = new CLIHandler();
+global $cliHandler;
+$handler = $cliHandler ?? new CLIHandler();
 
 $_SERVER['REQUEST_URI'] = '/CLI/';
 
@@ -28,6 +29,7 @@ $rc->addRoutes($routerManager->getRoutes());
 $handler->addCommand($rc);
 $argv = $_SERVER['argv'] ?? [];
 array_shift($argv);
+$firstCommand = $argv ? ['cmd' => array_shift($argv), 'args' => $argv] : null;
 
 while (true) {
     if ($firstCommand !== null) {
@@ -36,6 +38,7 @@ while (true) {
         $firstCommand = null;
     } else {
         $input = readline("awt> ");
+        if ($input === false) break;
         if (!$input) continue;
 
         $parts = explode(" ", $input);

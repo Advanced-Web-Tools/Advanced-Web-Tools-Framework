@@ -1,69 +1,40 @@
 <?php
-
 namespace packages;
-
 use packages\enums\EPackageType;
 
-/**
- * Class ManifestReader
- *
- * The ManifestReader class is responsible for reading and processing the
- * manifest file of a package in JSON format. It extends
- * the Package class to inherit common package attributes and methods.
- */
+/** Retains the old reader API, but reads the new installation manifest. */
 class ManifestReader extends Package
 {
     public array $manifest;
-    private string $path;
-
-    public function __construct(string $path)
-    {
-        parent::__construct();
-
-        $this->path = $path;
-    }
-
+    public function __construct(private string $path) { parent::__construct(); }
     public function readManifest(): self
     {
-        $content = file_get_contents($this->path . '/manifest.json');
-
-        $this->manifest = json_decode($content, true);
-
+        $this->manifest = \package\manifest\reader\ManifestReader::validate(
+            json_decode(file_get_contents($this->path . '/manifest.json'), true, 512, JSON_THROW_ON_ERROR)
+        );
         return $this;
     }
-
-    public function getManifest(): array
-    {
-        return $this->manifest;
-    }
-
+    public function getManifest(): array { return $this->manifest; }
     public function createPackage(): ?Package
     {
+        $values = $this->manifest;
         $package = new Package();
-
-        $type = array_key_first($this->manifest);
-        $values = $this->manifest[$type];
         $package->name = $values['name'];
-        $package->setStoreId($values['storeId']);
+        $package->setStoreId($values['store_id'] ?? null);
         $package->description = $values['description'] ?? null;
         $package->setIcon($values['icon'] ?? null);
-        $package->setMinimumAwtVersion($values['minimumAwtVersion'] ?? null);
-        $package->setMaximumAwtVersion($values['maximumAwtVersion'] ?? null);
-        $package->setVersion($values['version'] ?? null);
-        $package->systemPackage = $values['system'];
+        $package->setMinimumAwtVersion($values['minimum_awt_version']);
+        $package->setMaximumAwtVersion($values['maximum_awt_version'] ?? null);
+        $package->setVersion($values['version']);
+        $package->systemPackage = (bool) ($values['system_package'] ?? false);
         $package->author = $values['author'] ?? null;
-
-        $type = match ($type) {
-            "theme" => EPackageType::Theme,
-            "plugin" => EPackageType::Plugin,
-            "system" => EPackageType::System,
-        };
-
-        $package->setPackageType($type);
+        $package->license = $values['license'] ?? null;
+        $package->licenseUrl = $values['license_url'] ?? null;
+        $package->dependencies = $values['dependencies'];
+        $package->setPackageType(match ($values['type']) {
+            0 => EPackageType::System, 1 => EPackageType::Plugin, 2 => EPackageType::Theme,
+        });
         $package->setPreviewImage($values['preview_image'] ?? null);
-
         return $package;
     }
-
-
 }

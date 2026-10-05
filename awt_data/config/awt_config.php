@@ -1,8 +1,8 @@
 <?php
-const AWT_VERSION = "26.0.0";
+const AWT_VERSION = "27.0.0";
 const PACKAGE_MAX_LOAD_TRY = 5;
 
-const DEBUG = false;
+const DEBUG = true;
 
 const SHOW_SQL_CONNECTIONS_CALLS = false;
 

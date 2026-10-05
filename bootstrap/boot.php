@@ -29,6 +29,8 @@ if(defined("DEV")) {
     require_once  __DIR__ . '/dev.php';
 }
 
+global $cliHandler;
+if (PHP_SAPI === 'cli') $cliHandler = new \cli\CLIHandler();
 $loader = require __DIR__ . '/packages/loader.php';
 
 $routerManager = require __DIR__ . '/routes/router.php';

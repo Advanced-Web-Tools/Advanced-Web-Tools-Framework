@@ -1,243 +1,82 @@
 <?php
-
 namespace packages\runtime\handler;
 
 use cli\CLIHandler;
 use context\events\RespondContextEvent;
 use event\EventDispatcher;
-use Exception;
 use object\ObjectHandler;
 use packages\runtime\api\RuntimeAPI;
-use packages\runtime\handler\enums\ERuntimeExceptions;
-use packages\runtime\handler\enums\ERuntimeFlags;
 use packages\runtime\interface\IRuntime;
 use packages\runtime\Runtime;
-use ReflectionClass;
-use ReflectionException;
+use runtime\compatibility\LegacyRuntimeAdapter;
+use runtime\RuntimeExecutor;
 use vfs\resource\event\ContextSwitchEvent;
 
-/**
- * Class RuntimeHandler
- *
- * The RuntimeHandler class manages the lifecycle and execution of runtime instances.
- * It handles the creation, environment setup, and execution of various runtime packages
- * while managing flags and linked classes.
- */
+/** Compatibility facade; all execution is delegated to the new executor. */
 class RuntimeHandler extends RuntimeExceptions
 {
-
     protected RuntimeAPI $runtime;
-    protected bool $isLinker;
-    protected bool $isRouter;
-    protected bool $isPassable;
-    protected bool $usesEvents;
-    protected bool $waitForRuntime;
-    protected bool $isCommandProvider;
-    public array $passableInstances;
-    public array $routers;
-    public array $sharedObjects;
+    protected \runtime\Runtime $runtimeState;
+    protected RuntimeExecutor $executor;
+    public array $passableInstances = [];
+    public array $routers = [];
+    public array $sharedObjects = [];
     public ContextSwitchEvent $vfsContext;
     public RespondContextEvent $respondContext;
-
-    public CLIHandler $CLIHandler;
-
+    public ?CLIHandler $CLIHandler = null;
     public EventDispatcher $eventDispatcher;
 
     public function __construct()
     {
+        $this->executor = new RuntimeExecutor();
         $this->vfsContext = new ContextSwitchEvent();
-        $this->isLinker = false;
-        $this->isRouter = false;
-        $this->isPassable = false;
-        $this->isCommandProvider = false;
-        $this->usesEvents = false;
-        $this->passableInstances = [];
-        $this->routers = [];
-        $this->sharedObjects = [];
     }
-
-    /**
-     * Creates and sets up a new runtime instance.
-     *
-     * @param RuntimeAPI $package The runtime API instance to be created.
-     * @param Runtime $origin The origin runtime object.
-     * @return IRuntime The newly created runtime instance.
-     */
+    protected function configureExecutor(): void
+    {
+        $this->executor->sharedObjects = $this->sharedObjects;
+        $this->executor->passableInstances = $this->passableInstances;
+        $this->executor->routers = $this->routers;
+        $this->executor->eventDispatcher = $this->eventDispatcher;
+        $this->executor->CLIHandler = $this->CLIHandler;
+    }
+    protected function syncExecutor(): void
+    {
+        $this->sharedObjects = $this->executor->sharedObjects;
+        $this->passableInstances = $this->executor->passableInstances;
+        $this->routers = $this->executor->routers;
+        $this->eventDispatcher = $this->executor->eventDispatcher ?? $this->eventDispatcher;
+    }
     public function runtimeCreator(RuntimeAPI $package, Runtime $origin): IRuntime
     {
-        $this->createRuntimeInstance($package, $origin);
-        $this->setupEnvironment();
-        $this->flagHandler();
-
-        $this->setup();
-
-        $this->vfsContext->contextName = $origin->name;
-
-        return $this->runtime;
+        $this->configureExecutor();
+        $this->runtime = $package;
+        $this->runtimeState = \runtime\Runtime::create(LegacyRuntimeAdapter::installedPackage($origin));
+        $this->runtimeState->setEventDispatcher($this->eventDispatcher);
+        $this->executor->prepareAPI($package, $this->runtimeState);
+        $this->syncExecutor();
+        return $package;
     }
-
-    /**
-     * Creates a runtime instance and sets its information.
-     *
-     * @param RuntimeAPI $runtimeAPI The runtime API instance.
-     * @param Runtime $origin The origin runtime object.
-     * @return RuntimeAPI The created runtime API instance.
-     */
-    protected function createRuntimeInstance(RuntimeAPI $runtimeAPI, Runtime $origin): RuntimeAPI
-    {
-        $runtimeAPI->setInfo($origin);
-        $this->eventDispatcher->addListener("vfs.context.request", $this->vfsContext);
-        $this->runtime = $runtimeAPI;
-        return $this->runtime;
-    }
-
-    /**
-     * Sets up the environment for the current runtime instance.
-     */
-    protected function setupEnvironment(): void
-    {
-        $this->runtime->environmentSetup();
-    }
-
-    /**
-     * Performs additional setup for the current runtime instance.
-     */
-    protected function setup(): void
-    {
-        $this->runtime->setSharable($this->sharedObjects);
-        $this->runtime->setup();
-    }
-
-    /**
-     * Executes the main logic of the runtime.
-     * Features:
-     * - Create passable instance if applicable.
-     * - Handle event dispatching if the runtime uses events.
-     * - Store the runtime in the routers array if it's a router provider.
-     * - Handle linked runtimes if it's a linker.
-     * @return void
-     */
     public function execute(): void
     {
-        $this->runtime->main();
-        $this->createPassable();
-        $this->sharedObjects = $this->runtime->shared;
-        if ($this->usesEvents) {
-            $this->eventDispatcher = $this->runtime->eventDispatcher;
-        }
-
-        if ($this->isRouter) {
-            $this->routers[] = $this->runtime;
-        }
-
-        if ($this->isLinker) {
-            $objects = $this->loadLinked($this->runtime);
-            foreach ($objects as $object) {
-                $this->runtimeCreator($object, $this->runtime);
-                $this->execute();
-            }
-        }
+        $this->executor->executeAPI($this->runtime, $this->runtimeState);
+        $this->syncExecutor();
     }
-
-    /**
-     * Handles runtime flags to configure the current runtime instance.
-     */
     public function flagHandler(): void
     {
-        if (!$this->runtime->hasFlags()) {
-            return;
-        }
-
-        foreach ($this->runtime->configurationFlags as $flag) {
-            switch ($flag) {
-                case ERuntimeFlags::RuntimeLinker:
-                    $this->isLinker = true;
-                    break;
-                case ERuntimeFlags::CreatePassableObject:
-                    $this->isPassable = true;
-                    break;
-                case ERuntimeFlags::AccessOtherInstances:
-                    $this->runtime->passable = $this->passableInstances;
-                    break;
-                case ERuntimeFlags::Router:
-                    $this->isRouter = true;
-                    break;
-                case ERuntimeFlags::EventDispatcher:
-                    $this->runtime->eventDispatcher = $this->eventDispatcher;
-                    $this->usesEvents = true;
-                    break;
-                case ERuntimeFlags::WaitForPackage:
-                    $this->waitForRuntime = true;
-                    break;
-                case ERuntimeFlags::CommandProvider:
-                    if(PHP_SAPI === "cli")
-                        $this->runtime->CLIHandler = $this->CLIHandler;
-                    $this->isCommandProvider = true;
-            }
-        }
+        $this->runtimeState->setFlags((new \runtime\RuntimeFlagHandler())->normalize($this->runtime->configurationFlags));
     }
-
-    /**
-     * Creates a passable instance of the current runtime if applicable.
-     */
-    private function createPassable(): void
-    {
-        if ($this->isPassable)
-            $this->passableInstances[$this->runtime->name][get_class($this->runtime)] = $this->runtime;
-    }
-
-    /**
-     * Loads linked runtimes defined in the current runtimes links.
-     *
-     * @param RuntimeAPI $runtime The runtime instance to load links from.
-     * @return array An array of loaded linked runtime instances.
-     * @throws Exception
-     */
     public function loadLinked(RuntimeAPI $runtime): array
     {
-        $return = [];
-
-        if (empty($runtime->links))
-            return $return;
-
-        foreach ($runtime->links as $link) {
-
-            $extractedObject = ObjectHandler::createObjectFromFile($link);
-
-            if ($extractedObject === null)
-                return $return;
-
-            if (is_subclass_of($extractedObject, RuntimeAPI::class)) {
-                try {
-                    $reflectionClass = new ReflectionClass($extractedObject);
-                } catch (ReflectionException $e) {
-                    die("RuntimeHandler: " . $e->getMessage());
-                }
-                if (!$reflectionClass->isAbstract()) {
-                    $return[] = $extractedObject;
-                }
-            }
-
-            if (empty($return))
-                $this->exception(ERuntimeExceptions::LinkerMissingRuntimeAPI, $runtime->name);
+        $objects = [];
+        foreach ($runtime->links ?? [] as $file) {
+            $object = ObjectHandler::createObjectFromFile($file);
+            if (!$object instanceof RuntimeAPI) throw new \RuntimeException("Missing legacy RuntimeAPI in {$file}");
+            $objects[] = $object;
         }
-
-        return $return;
+        return $objects;
     }
-
-
-    /**
-     * Resets the flags and states of the RuntimeHandler.
-     */
     protected function resetRuntimeHandler(): void
     {
-        $this->waitForRuntime = false;
-        $this->isLinker = false;
-        $this->isRouter = false;
-        $this->isPassable = false;
-        $this->isCommandProvider = false;
-        $this->usesEvents = false;
-        $this->passableInstances = [];
+        // Request-wide shared/passable registries deliberately survive package boundaries.
     }
-
 }

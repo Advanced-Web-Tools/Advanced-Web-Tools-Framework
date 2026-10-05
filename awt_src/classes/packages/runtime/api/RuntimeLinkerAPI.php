@@ -35,6 +35,6 @@ abstract class RuntimeLinkerAPI extends RuntimeAPI
      */
     final public function createLink(string $name, string $path): void
     {
-        $this->links[$name] = $path;
+        $this->links[$name] = $this->runtimePath . $path;
     }
 }

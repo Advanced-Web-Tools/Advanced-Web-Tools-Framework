@@ -49,6 +49,7 @@ class PackageService implements IPackageService
     private function mapPackage(array $data): InstalledPackage
     {
         $package = new InstalledPackage();
+        $data['dependencies'] = $data['dependencies'] ?? [];
         $package->fromArray($data);
         $package->createDependencyCollection();
         return $package;

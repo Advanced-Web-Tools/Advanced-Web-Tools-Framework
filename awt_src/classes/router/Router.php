@@ -137,10 +137,6 @@ class Router
      */
     public function match(string $requestPath): ?array
     {
-        if ($requestPath === "/") {
-            return [];
-        }
-
         $explodedRoute = explode("/", $this->path);
         $explodedPath = explode("/", $requestPath);
         $matches = [];
