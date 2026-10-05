@@ -2,8 +2,9 @@
 
 namespace database\provider;
 
-require ROOT . '/awt_db.php';
+require CONFIG . '/awt_db.php';
 
+use database\exceptions\ProviderException;
 use database\interface\IProvider;
 use PDO;
 use PDOException;
@@ -23,37 +24,40 @@ use RuntimeException;
  */
 class DatabaseProvider implements IProvider
 {
-    private PDO $pdo;
+    private ?PDO $pdo = null;
 
-    public function __construct()
+    /**
+     * @throws ProviderException
+     */
+    public function __construct() {}
+
+    private function connection(): PDO
     {
+        if ($this->pdo !== null) return $this->pdo;
         global $shared;
-
         if (!isset($shared['DBEngine']['PDO'])) {
             $dsn = DB_TYPE . ':host=' . DB_HOSTNAME . ';dbname=' . DB_NAME;
-
             try {
-                $pdo = new PDO($dsn, DB_USERNAME, DB_PASSWORD);
-                $pdo->setAttribute(PDO::ATTR_ERRMODE,    PDO::ERRMODE_EXCEPTION);
-                $pdo->setAttribute(PDO::ATTR_PERSISTENT, true);
-
-                $shared['DBEngine']['PDO'] = $pdo;
+                $shared['DBEngine']['PDO'] = new PDO($dsn, DB_USERNAME, DB_PASSWORD, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_PERSISTENT => true,
+                ]);
             } catch (PDOException $e) {
-                throw new RuntimeException('Database connection failed: ' . $e->getMessage(), 0, $e);
+                throw new ProviderException("Default", $e);
             }
         }
-
-        $this->pdo = $shared['DBEngine']['PDO'];
+        return $this->pdo = $shared['DBEngine']['PDO'];
     }
 
     /**
      * {@inheritdoc}
      *
      * Integers are bound with PDO::PARAM_INT; everything else with PARAM_STR.
+     * @throws ProviderException
      */
     public function execute(string $sql, array $bindings = []): PDOStatement
     {
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->connection()->prepare($sql);
 
         foreach ($bindings as $placeholder => $value) {
             $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
@@ -65,15 +69,7 @@ class DatabaseProvider implements IProvider
         } catch (PDOException $e) {
             $stmt->closeCursor();
 
-            if (defined('DEBUG') && DEBUG) {
-                throw new RuntimeException(
-                    "Query failed: {$e->getMessage()}\nSQL: {$sql}",
-                    0,
-                    $e
-                );
-            }
-
-            throw $e;
+            throw new ProviderException("Default", $e);
         }
 
         return $stmt;
@@ -82,6 +78,6 @@ class DatabaseProvider implements IProvider
     /** {@inheritdoc} */
     public function lastInsertId(): int
     {
-        return (int) $this->pdo->lastInsertId();
+        return (int) $this->connection()->lastInsertId();
     }
 }

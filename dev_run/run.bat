@@ -1,1 +1,0 @@
-php.exe -S localhost:3000 -t "../"

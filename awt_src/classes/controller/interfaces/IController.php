@@ -3,6 +3,7 @@
 namespace controller\interfaces;
 
 use redirect\Redirect;
+use response\Response;
 use view\View;
 
 /**
@@ -52,5 +53,5 @@ interface IController
      * @return View|Redirect Returns a View object for rendering a view, or
      * a Redirect object for redirecting to another location.
      */
-    public function index(array|string $params): View|Redirect;
+    public function index(array|string $params): View|Redirect|Response;
 }

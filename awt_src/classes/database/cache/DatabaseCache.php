@@ -6,6 +6,8 @@ use database\interface\ICache;
 use vfs\cache\Cache;
 use vfs\cache\enums\ECacheValidation;
 use vfs\transient\enums\ETransientType;
+use vfs\transient\interfaces\ITransientStorage;
+use vfs\transient\interfaces\ITransientStorageEntry;
 use vfs\transient\TransientStorage;
 
 /**
@@ -146,7 +148,7 @@ class DatabaseCache implements ICache
     // Index persistence helpers
     // -------------------------------------------------------------------------
 
-    private function makeStorage(string $table): TransientStorage
+    private function makeStorage(string $table): ITransientStorage
     {
         $storage = new TransientStorage();
         $storage->setPool('cache')->setSubPool($table);
@@ -159,7 +161,7 @@ class DatabaseCache implements ICache
      *
      * @return array<string, array<string, mixed>>
      */
-    private function loadIndex(TransientStorage $storage): array
+    private function loadIndex(ITransientStorage $storage): array
     {
         $file = $storage->getFile(self::INDEX_FILE);
 
@@ -167,7 +169,7 @@ class DatabaseCache implements ICache
             return [];
         }
 
-        $data = require $file->path;
+        $data = require $file->getPath();
         return is_array($data) ? $data : [];
     }
 
@@ -178,7 +180,7 @@ class DatabaseCache implements ICache
      *
      * @param array<string, array<string, mixed>> $index
      */
-    private function saveIndex(TransientStorage $storage, array $index): void
+    private function saveIndex(ITransientStorage $storage, array $index): void
     {
         $export  = '<?php return ' . var_export($index, true) . ';';
         $file    = $storage->getFile(self::INDEX_FILE);

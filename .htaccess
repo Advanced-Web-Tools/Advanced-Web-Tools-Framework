@@ -9,5 +9,5 @@
 
     RewriteCond %{REQUEST_URI} !^/index\.php$ [NC]
 
-    RewriteRule ^(.*)$ /index.php [L]
+    RewriteRule ^(.*)$ ./public/index.php [L]
 </IfModule>

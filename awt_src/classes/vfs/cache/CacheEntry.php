@@ -2,15 +2,15 @@
 
 namespace vfs\cache;
 
-use vfs\transient\TransientStorageEntry;
+use vfs\transient\interfaces\ITransientStorageEntry;
 
 class CacheEntry
 {
     private string $name;
     private array $content;
-    private TransientStorageEntry $entry;
+    private ITransientStorageEntry $entry;
 
-    public function __construct(string $name, array $content, TransientStorageEntry $entry)
+    public function __construct(string $name, array $content, ITransientStorageEntry $entry)
     {
         $this->name = $name;
         $this->content = $content;
@@ -27,13 +27,13 @@ class CacheEntry
         return $this->content;
     }
 
-    public function getStorageEntry(): TransientStorageEntry
+    public function getStorageEntry(): ITransientStorageEntry
     {
         return $this->entry;
     }
 
     public function getLastModified(): int
     {
-        return $this->entry->lastModified;
+        return $this->entry->getLastModified();
     }
 }
