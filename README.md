@@ -52,13 +52,3 @@ Unlike monolithic frameworks such as Laravel or Symfony, AWT operates as a micro
 ## Maintainers
 
 - ElStefanos
-
-## Runtime architecture and package compatibility
-
-See [the runtime migration guide](docs/runtime-refactor.md) for the new execution
-engine, legacy package support, manifest dependencies, the database migration,
-and verification commands.
-
-## ORM
-
-See [ORM usage and compatibility](docs/orm.md) for safe assignment, casts, model queries, relationships, and transactions. Run the independent checks with `php tests/orm.php`.
