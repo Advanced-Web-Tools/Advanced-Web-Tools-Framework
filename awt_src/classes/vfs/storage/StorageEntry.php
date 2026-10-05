@@ -78,7 +78,7 @@ class StorageEntry extends Model
      */
     public function setUrl(?string $url = null): self
     {
-        $this->url = $url ?? '/storage/' . $this->id . '/' . $this->name;
+        $this->url = $url ?? '/storage/' . $this->id . '/' . rawurlencode($this->name ?? '');
         return $this;
     }
 
@@ -149,15 +149,4 @@ class StorageEntry extends Model
         return $this->id;
     }
 
-    public function save(): bool
-    {
-        $this->ownerType = $this->ownerType->value ?? EOwnerType::USER->value;
-        return parent::save();
-    }
-
-    public function saveModel(): ?int
-    {
-        $this->ownerType = $this->ownerType->value ?? EOwnerType::USER->value;
-        return parent::saveModel();
-    }
 }

@@ -59,11 +59,16 @@ class Storage implements IStorageFacade
 
         $stagingPath = $this->stageUploadedFile($file);
 
-        $entry = $this->buildEntry($file['name'], $stagingPath, $ownerType, $ownerId, $middleware);
-
-        $this->manager->registerLocal($entry, $ownerName);
-
-        return $entry;
+        try {
+            $entry = $this->buildEntry($file['name'], $stagingPath, $ownerType, $ownerId, $middleware);
+            if (!$this->manager->registerLocal($entry, $ownerName)) throw new \RuntimeException('Failed to register uploaded file.');
+            return $entry;
+        } catch (\Throwable $e) {
+            if ($this->fileSystem->exists($stagingPath) && !$this->fileSystem->delete($stagingPath)) {
+                throw new \RuntimeException("Could not clean up staged upload: {$stagingPath}", previous: $e);
+            }
+            throw $e;
+        }
     }
 
     public function uploadMultiple(
@@ -79,8 +84,9 @@ class Storage implements IStorageFacade
             try {
                 $entries[] = $this->upload($file, $ownerType, $ownerId, $ownerName, $middleware);
             } catch (\Throwable $e) {
+                $name = is_array($file) && is_string($file['name'] ?? null) ? $file['name'] : 'unknown';
                 throw new \RuntimeException(
-                    "Failed to upload file at index {$index} ('{$file['name']}'): " . $e->getMessage(),
+                    "Failed to upload file at index {$index} ('{$name}'): " . $e->getMessage(),
                     previous: $e
                 );
             }
@@ -92,6 +98,7 @@ class Storage implements IStorageFacade
     public function download(int $id, string $disposition = 'attachment'): void
     {
         $entry = $this->manager->get($id);
+        StorageAccess::authorize($entry);
         $path  = $entry->getPath();
 
         if (!$this->fileSystem->exists($path)) {
@@ -180,14 +187,11 @@ class Storage implements IStorageFacade
      */
     private function stageUploadedFile(array $file): string
     {
-        $stagingDir = $this->basePath . self::STAGING_DIR;
+        $stagingDir = rtrim($this->basePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . self::STAGING_DIR;
 
-        $this->fileSystem->makeDirectory($stagingDir);
+        if (!$this->fileSystem->makeDirectory($stagingDir)) throw new \RuntimeException('Could not create upload staging directory.');
 
-        $safeName    = hash('SHA256', uniqid($file['name'], true))
-            . '.'
-            . pathinfo($file['name'], PATHINFO_EXTENSION);
-        $destination = $stagingDir . $safeName;
+        $destination = FileName::unique($stagingDir, $file['name']);
 
         if (!move_uploaded_file($file['tmp_name'], $destination)) {
             throw new \RuntimeException(
@@ -229,8 +233,8 @@ class Storage implements IStorageFacade
         }
 
         header('Content-Type: application/octet-stream');
-        header('Content-Disposition: ' . $disposition . '; filename="' . addslashes($entry->getName()) . '"');
-        header('Content-Length: ' . $entry->getSize());
+        header('Content-Disposition: ' . $disposition . '; filename="' . addcslashes(str_replace(["\r", "\n"], '', basename($entry->getName())), '"\\') . '"');
+        header('Content-Length: ' . $this->fileSystem->fileSize($entry->getPath()));
         header('Cache-Control: no-cache, must-revalidate');
         header('Pragma: no-cache');
     }
