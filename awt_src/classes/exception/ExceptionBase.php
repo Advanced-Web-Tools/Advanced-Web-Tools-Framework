@@ -16,7 +16,7 @@ abstract class ExceptionBase extends \Exception
         $this->event = new GetContextEvent();
         $this->context = new Context("", "System", "/");
         $this->event->setContext($this->context);
-        $eventDispatcher->dispatch($this->event);
+        if ($eventDispatcher instanceof \event\EventDispatcher) $eventDispatcher->dispatch($this->event);
         $this->context = $this->event->getContext();
 
         $message = $this->buildMessage();

@@ -49,13 +49,22 @@ class DatabaseManager
      * @param ICache       $cache    Stores and invalidates cached query results.
      */
     public function __construct(
-        private readonly IProvider    $provider = new DatabaseProvider(),
-        private readonly QueryBuilder $builder  = new QueryBuilder(),
-        private readonly ICache       $cache    = new DatabaseCache(),
+        private IProvider    $provider = new DatabaseProvider(),
+        private QueryBuilder $builder  = new QueryBuilder(),
+        private ICache       $cache    = new DatabaseCache(),
     ) {
         $this->cacheOn = !in_array(DoNotCache::class, self::class_uses_recursive($this));
     }
 
+
+    /** Reuse a connection/cache while keeping query-building state independent. */
+    public function useConnectionFrom(DatabaseManager $source): static
+    {
+        $this->provider = $source->provider;
+        $this->cache = $source->cache;
+        $this->builder = new QueryBuilder();
+        return $this;
+    }
 
     /**
      * Set the table all subsequent query clauses will target.
@@ -123,6 +132,26 @@ class DatabaseManager
         return $this;
     }
 
+    public function andWhere(array $conditions, bool $useNot = false): self
+    {
+        $this->builder->andWhere($conditions, $useNot);
+        return $this;
+    }
+
+    public function orWhere(array $conditions, bool $useNot = false): self
+    {
+        $this->builder->orWhere($conditions, $useNot);
+        return $this;
+    }
+
+    public function joinOn(string $table, string $left, string $right, string $type = 'INNER'): self
+    {
+        $this->builder->joinOn($table, $left, $right, $type);
+        return $this;
+    }
+
+    public function first(): ?array { return $this->get(1)[0] ?? null; }
+
     /**
      * Add a WHERE clause using LIKE pattern matching.
      *
@@ -168,7 +197,7 @@ class DatabaseManager
 
         $id = $this->provider->lastInsertId();
 
-        $this->cache->invalidateTable($payload->table);
+        $this->invalidateAfterWrite($payload->table);
 
         $this->lastQuery = $payload->sql;
         self::showDebugTrace();
@@ -204,7 +233,7 @@ class DatabaseManager
 
         // Include binding values and types; never reuse pre-refactor SQL-only entries.
         $cacheKey = 'v2:' . hash('sha256', serialize([$payload->sql, $payload->bindings]));
-        if ($this->cacheOn && $this->builderSupportsCaching($payload->sql)) {
+        if ($this->canCache($payload->sql)) {
             $cached = $this->cache->get($payload->table, $cacheKey);
             if ($cached !== false) {
                 return $cached;
@@ -215,7 +244,7 @@ class DatabaseManager
         $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $stmt->closeCursor();
 
-        if ($this->cacheOn && $this->builderSupportsCaching($payload->sql))
+        if ($this->canCache($payload->sql))
             $this->cache->set($payload->table, $cacheKey, $result, $payload->conditions);
 
         return $result;
@@ -240,7 +269,7 @@ class DatabaseManager
         $result = $stmt->rowCount() > 0;
         $stmt->closeCursor();
 
-        $this->cache->invalidateTable($payload->table);
+        $this->invalidateAfterWrite($payload->table);
 
         $this->lastQuery = $payload->sql;
         self::showDebugTrace();
@@ -269,13 +298,37 @@ class DatabaseManager
         $result = $stmt->rowCount() > 0;
         $stmt->closeCursor();
 
-        $this->cache->invalidateTable($payload->table);
+        $this->invalidateAfterWrite($payload->table);
 
         $this->lastQuery = $payload->sql;
         self::showDebugTrace();
 
         return $result;
     }
+
+    public function transaction(callable $callback): mixed
+    {
+        if (!$this->provider instanceof \database\interface\ITransactionalProvider) {
+            throw new \LogicException('This provider does not support transactions.');
+        }
+        return $this->provider->transaction(fn() => $callback($this));
+    }
+
+    private function canCache(string $sql): bool
+    {
+        return $this->cacheOn && $this->builderSupportsCaching($sql)
+            && !($this->provider instanceof \database\interface\ITransactionalProvider && $this->provider->inTransaction());
+    }
+
+    private function invalidateAfterWrite(string $table): void
+    {
+        $cache = $this->cache;
+        if ($this->provider instanceof \database\interface\ITransactionalProvider) {
+            $this->provider->afterCommit(fn() => $cache->invalidateTable($table));
+        } else $cache->invalidateTable($table);
+    }
+
+    protected function queryTable(): string { return $this->builder->getTable(); }
 
     private function builderSupportsCaching(string $sql): bool
     {

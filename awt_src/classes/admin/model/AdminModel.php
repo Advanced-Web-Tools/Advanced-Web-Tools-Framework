@@ -85,6 +85,8 @@ class AdminModel extends Model
         $this->paramBlackList("role");
     }
 
+    protected function hiddenAttributes(): array { return ['password', 'token']; }
+
     public function setID(int $id)
     {
         $this->id = $id;

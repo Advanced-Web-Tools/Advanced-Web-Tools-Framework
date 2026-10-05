@@ -22,6 +22,7 @@ namespace database\query;
  */
 class QueryBuilder
 {
+    private int $parameterIndex = 0;
     private string $table        = '';
     private string $selectClause = '';
     private array  $joins        = [];
@@ -38,6 +39,7 @@ class QueryBuilder
 
     public function table(string $name): self
     {
+        $this->assertIdentifier($name);
         $this->table = $name;
         return $this;
     }
@@ -51,8 +53,9 @@ class QueryBuilder
     public function insert(array $data): self
     {
         foreach ($data as $column => $value) {
-            $this->insertColumns[]             = $column;
-            $this->insertBindings[":{$column}"] = $value;
+            $this->assertIdentifier((string) $column, false);
+            $this->insertColumns[] = $column;
+            $this->insertBindings[$this->placeholder()] = $value;
         }
         return $this;
     }
@@ -66,6 +69,12 @@ class QueryBuilder
 
     public function join(string $table, string $on, string $type = 'INNER'): self
     {
+        $this->assertIdentifier($table);
+        $type = strtoupper($type);
+        if (!in_array($type, ['INNER', 'LEFT', 'RIGHT', 'LEFT OUTER', 'RIGHT OUTER', 'CROSS'], true)) {
+            throw new \InvalidArgumentException('Unsupported JOIN type.');
+        }
+        // Legacy ON expressions are trusted SQL. Use joinOn() with external identifiers.
         $this->joins[] = " {$type} JOIN {$table} ON {$on}";
         return $this;
     }
@@ -78,40 +87,78 @@ class QueryBuilder
      */
     public function where(array $conditions, bool $useNot = false, string $conjunction = 'AND'): self
     {
-        $conjunction = $this->sanitiseConjunction($conjunction);
-        $operator    = $useNot ? '!=' : '=';
+        // Preserve legacy replacement semantics, but discard replaced bindings.
+        $this->bindings = [];
+        $this->conditions = [];
+        $this->whereClause = $conditions === [] ? '' : ' WHERE ' . $this->predicate($conditions, $useNot ? '!=' : '=', $conjunction);
+        return $this;
+    }
 
+    public function andWhere(array $conditions, bool $useNot = false): self
+    {
+        return $this->appendWhere($conditions, $useNot, 'AND');
+    }
+
+    public function orWhere(array $conditions, bool $useNot = false): self
+    {
+        return $this->appendWhere($conditions, $useNot, 'OR');
+    }
+
+    private function appendWhere(array $conditions, bool $useNot, string $conjunction): self
+    {
+        if ($conditions === []) return $this;
+        $predicate = $this->predicate($conditions, $useNot ? '!=' : '=', 'AND');
+        $this->whereClause = $this->whereClause === '' ? ' WHERE ' . $predicate
+            : ' WHERE (' . substr($this->whereClause, 7) . ') ' . $conjunction . ' (' . $predicate . ')';
+        return $this;
+    }
+
+    private function predicate(array $conditions, string $operator, string $conjunction): string
+    {
         $clauses = [];
         foreach ($conditions as $column => $value) {
-            $placeholder    = ":{$column}";
-            $clauses[]      = "{$column} {$operator} {$placeholder}";
-            $this->bindings[$placeholder]  = $value;
-            $this->conditions[$column]     = $value;
+            $this->assertIdentifier((string) $column, true, true);
+            $this->conditions[$column] = $value;
+            if ($value === null && in_array($operator, ['=', '!='], true)) {
+                $clauses[] = $column . ($operator === '=' ? ' IS NULL' : ' IS NOT NULL');
+            } else {
+                $placeholder = $this->placeholder();
+                $clauses[] = "{$column} {$operator} {$placeholder}";
+                $this->bindings[$placeholder] = $value;
+            }
         }
+        return implode(' ' . $this->sanitiseConjunction($conjunction) . ' ', $clauses);
+    }
 
-        $this->whereClause = ' WHERE ' . implode(" {$conjunction} ", $clauses);
-        return $this;
+    private function placeholder(): string { return ':p' . ++$this->parameterIndex; }
+
+    private function assertIdentifier(string $identifier, bool $qualified = true, bool $numeric = false): void
+    {
+        if ($numeric && preg_match('/^[0-9]+$/D', $identifier)) return;
+        $part = '(?:[A-Za-z_][A-Za-z0-9_]*|`[A-Za-z_][A-Za-z0-9_]*`)';
+        $pattern = $qualified ? '/^' . $part . '(?:\\.' . $part . ')*$/D' : '/^' . $part . '$/D';
+        if (!preg_match($pattern, $identifier)) throw new \InvalidArgumentException("Invalid SQL identifier: {$identifier}");
+    }
+
+    public function joinOn(string $table, string $leftColumn, string $rightColumn, string $type = 'INNER'): self
+    {
+        $this->assertIdentifier($leftColumn);
+        $this->assertIdentifier($rightColumn);
+        return $this->join($table, "{$leftColumn} = {$rightColumn}", $type);
     }
 
     /** Add a WHERE … LIKE … clause. */
     public function like(array $conditions, bool $useNot = false): self
     {
-        $operator = $useNot ? 'NOT LIKE' : 'LIKE';
-
-        $clauses = [];
-        foreach ($conditions as $column => $value) {
-            $placeholder    = ":{$column}";
-            $clauses[]      = "{$column} {$operator} {$placeholder}";
-            $this->bindings[$placeholder]  = $value;
-            $this->conditions[$column]     = $value;
-        }
-
-        $this->whereClause = ' WHERE ' . implode(' AND ', $clauses);
+        $this->bindings = [];
+        $this->conditions = [];
+        $this->whereClause = $conditions === [] ? '' : ' WHERE ' . $this->predicate($conditions, $useNot ? 'NOT LIKE' : 'LIKE', 'AND');
         return $this;
     }
 
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
+        $this->assertIdentifier($column);
         $direction              = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
         $this->orderByClauses[] = "{$column} {$direction}";
         return $this;
@@ -119,6 +166,9 @@ class QueryBuilder
 
     public function buildSelect(?int $limit = null, ?int $offset = null): QueryPayload
     {
+        if (($limit !== null && $limit < 0) || ($offset !== null && $offset < 0)) {
+            throw new \InvalidArgumentException('Pagination values must be nonnegative.');
+        }
         $sql      = $this->selectClause . implode('', $this->joins) . $this->whereClause;
         $bindings = $this->bindings;
 
@@ -141,6 +191,7 @@ class QueryBuilder
 
     public function buildInsert(): QueryPayload
     {
+        if ($this->insertColumns === []) throw new \InvalidArgumentException('Cannot insert an empty attribute list.');
         if (count($this->insertColumns) !== count($this->insertBindings)) {
             throw new \InvalidArgumentException('Column count does not match value count.');
         }
@@ -164,16 +215,19 @@ class QueryBuilder
      */
     public function buildUpdate(array $data): QueryPayload
     {
+        if ($data === []) throw new \InvalidArgumentException('Cannot update an empty attribute list.');
         $setClauses  = [];
         $setBindings = [];
 
         foreach ($data as $column => $value) {
-            if ($value === 'DEFAULT') {
-                $setClauses[] = "{$column} = DEFAULT";
+            $this->assertIdentifier((string) $column, false);
+            if ($value instanceof SqlExpression || $value === 'DEFAULT') {
+                $expression = $value instanceof SqlExpression ? $value->sql : 'DEFAULT';
+                $setClauses[] = "{$column} = {$expression}";
             } else {
-                $placeholder            = ":set_{$column}";
+                $placeholder = $this->placeholder();
                 $setClauses[]           = "{$column} = {$placeholder}";
-                $setBindings[$placeholder] = $value;
+                $setBindings[$placeholder] = $value instanceof BoundValue ? $value->value : $value;
             }
         }
 
@@ -200,6 +254,7 @@ class QueryBuilder
 
     public function reset(): void
     {
+        $this->parameterIndex = 0;
         $this->table           = '';
         $this->selectClause    = '';
         $this->joins           = [];
