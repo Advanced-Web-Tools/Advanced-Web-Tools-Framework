@@ -21,6 +21,7 @@ class Settings
         table("awt_setting")->
         select(["awt_setting.id", "awt_package.name AS package_name", "awt_setting.package_id", "awt_setting.name", "awt_setting.value", "awt_setting.value_type", "awt_setting.category", "awt_setting.required_permission_level"])->
         join("awt_package", "awt_package.id = awt_setting.package_id")->
+        where(["1" => 1])->
         get();
 
         foreach ($result as $setting) {

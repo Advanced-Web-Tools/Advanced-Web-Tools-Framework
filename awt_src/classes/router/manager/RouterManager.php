@@ -3,6 +3,7 @@ namespace router\manager;
 
 use event\EventDispatcher;
 use redirect\Redirect;
+use response\Response;
 use router\Router;
 use view\View;
 
@@ -25,7 +26,7 @@ final class RouterManager
 
     public function __construct()
     {
-        $this->currentPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+        $this->currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
     }
 
     /**
@@ -36,7 +37,7 @@ final class RouterManager
      */
     public function addRouter(Router $route): void
     {
-        if ($route->name === null) {
+        if ($route->name === null || trim($route->name) === '') {
             $route->name = count($this->routesName);
         }
 
@@ -96,18 +97,8 @@ final class RouterManager
      *
      * @return View|Redirect The result of the route action, either a View or Redirect instance.
      */
-    public function startRouter(): View|Redirect
+    public function startRouter(): View|Redirect|Response
     {
-
-        if($this->currentPath === '/')
-        {
-            if(!isset($this->routesPath['/'])) {
-                $this->handleNotFound();
-                exit();
-            } else {
-                $this->routesPath['/']->route([]);
-            }
-        }
 
         foreach ($this->routesPath as $route) {
             $params = $route->match($this->currentPath);

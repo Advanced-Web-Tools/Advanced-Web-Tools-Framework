@@ -261,28 +261,8 @@ class ObjectFactory
             }
             $classToInstantiate = $this->className;
         } elseif ($this->classPath !== null) {
-            $beforeClasses = get_declared_classes();
-            include_once $this->classPath;
-            $afterClasses = get_declared_classes();
-            $newClasses = array_diff($afterClasses, $beforeClasses);
+            $classToInstantiate = ObjectHandler::classFromFile($this->classPath);
 
-            if (empty($newClasses)) {
-                if (DEBUG) throw new \Exception("No new class was declared in the file: {$this->classPath}");
-                return null;
-            }
-            
-            foreach ($newClasses as $newClass) {
-                try {
-                    $reflection = new ReflectionClass($newClass);
-                    if (!$reflection->isAbstract()) {
-                        $classToInstantiate = $newClass;
-                        break;
-                    }
-                } catch (ReflectionException $e) {
-                    if (DEBUG) throw new \Exception("Reflection failed for class {$newClass}.", 0, $e);
-                    return null;
-                }
-            }
         }
 
         if ($classToInstantiate === null) {
@@ -316,7 +296,6 @@ class ObjectFactory
 
         $object = $this->setProperty($object);
         $object = $this->callMethods($object);
-        $this->__destruct();
         return $object;
     }
 
