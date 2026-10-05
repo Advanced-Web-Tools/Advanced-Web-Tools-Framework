@@ -102,7 +102,6 @@
 <div class="container">
 
     <div class="error-code">404</div>
-    <div class="icon">🔎</div>
 
     <h1>Page Not Found</h1>
 

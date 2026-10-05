@@ -8,7 +8,7 @@
     <style>
 
         body {
-            background-color: #222;
+            background: #2b2b2b;
             color: #fff;
             font-family: Arial, sans-serif;
             display: flex;
@@ -22,7 +22,7 @@
             text-align: center;
             max-width: 500px;
             padding: 40px;
-            background: #2b2b2b;
+
             border-radius: 10px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.4);
         }
