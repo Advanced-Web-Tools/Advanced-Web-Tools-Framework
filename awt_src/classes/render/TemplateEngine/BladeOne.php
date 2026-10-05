@@ -1573,11 +1573,11 @@ class BladeOne
         }
         // If the compiled file doesn't exist we will indicate that the view is expired
         // so that it can be re-compiled. Else, we will verify the last modification
-        // of the views is less than the modification times of the compiled views.
+        // of the views or compiler is newer than the compiled views.
         if (!$this->compiledPath || !\is_file($compiled)) {
             return true;
         }
-        return \filemtime($compiled) < \filemtime($template);
+        return \filemtime($compiled) < max(\filemtime($template), \filemtime(__FILE__));
     }
 
     /**
@@ -4307,12 +4307,26 @@ class BladeOne
 
     protected function compileResource($expression): string
     {
-        $expression = str_replace("('", "", $expression);
-        $expression = str_replace("')", "", $expression);
+        return $this->phpTagEcho . '$this->resourceUrl' . $expression . '; ?>';
+    }
 
-        $path = HOSTNAME . "/awt_src/vendor/$expression";
+    /** Resolve a Resource alias at render time using this template's package context. */
+    public function resourceUrl(string $alias, bool $must = false): string
+    {
+        $context = $this->packageName;
+        if (str_contains($alias, ':')) $context = explode(':', $alias, 2)[0];
+        $resource = new \vfs\resource\Resource($context);
+        $path = $resource->get($alias, $must);
+        if ($path === null) return '';
 
-        return $this->phpTagEcho . "'$path'; ?>";
+        $root = rtrim(PACKAGES, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($path, $root)) {
+            throw new \vfs\resource\exceptions\ResourceException('Resource is outside the package root.');
+        }
+        $relative = substr($path, strlen($root));
+        $segments = explode(DIRECTORY_SEPARATOR, $relative);
+        $url = rtrim(HOSTNAME, '/') . '/awt_packages/' . implode('/', array_map('rawurlencode', $segments));
+        return self::e($url);
     }
 
     protected function compileUrl($expression): string {

@@ -77,17 +77,17 @@ class PackageStorageTreeGenerator implements IPackageStorageTreeGenerator
     public function generate(): IPackageStorageTreeGenerator
     {
         $this->entries = [];
-        $this->fsService->makeDirectory($this->destination);
+        if (!$this->fsService->makeDirectory($this->destination)) throw new \RuntimeException('Could not create package storage directory.');
 
         foreach ($this->storageTree['directories'] as $dir) {
-            $this->fsService->makeDirectory($this->destination . DIRECTORY_SEPARATOR . $dir);
+            if (!$this->fsService->makeDirectory($this->destination . DIRECTORY_SEPARATOR . $dir)) throw new \RuntimeException('Could not create package asset directory.');
         }
 
         foreach ($this->storageTree['files'] as $relPath) {
             $srcPath  = $this->source . DIRECTORY_SEPARATOR . $relPath;
             $destPath = $this->destination . DIRECTORY_SEPARATOR . $relPath;
 
-            $this->fsService->copy($srcPath, $destPath);
+            $this->replaceAsset($srcPath, $destPath);
 
             $entry = new StorageEntry();
             $entry->setName(basename($relPath))
@@ -102,6 +102,30 @@ class PackageStorageTreeGenerator implements IPackageStorageTreeGenerator
         }
 
         return $this;
+    }
+
+    private function replaceAsset(string $source, string $destination): void
+    {
+        $staged = \vfs\storage\FileName::unique(dirname($destination), $destination);
+        if (!$this->fsService->copy($source, $staged)) throw new \RuntimeException("Could not copy package asset: {$source}");
+        $backup = null;
+        try {
+            if ($this->fsService->exists($destination)) {
+                $backup = \vfs\storage\FileName::unique(dirname($destination), $destination);
+                if (!$this->fsService->move($destination, $backup)) throw new \RuntimeException("Could not back up package asset: {$destination}");
+            }
+            if (!$this->fsService->move($staged, $destination)) {
+                if ($backup !== null && !$this->fsService->move($backup, $destination)) {
+                    throw new \RuntimeException("Could not restore package asset; backup remains at {$backup}");
+                }
+                throw new \RuntimeException("Could not replace package asset: {$destination}");
+            }
+            if ($backup !== null && !$this->fsService->delete($backup)) throw new \RuntimeException("Could not clean up package asset backup: {$backup}");
+        } finally {
+            if ($this->fsService->exists($staged) && !$this->fsService->delete($staged)) {
+                throw new \RuntimeException("Could not clean up staged package asset: {$staged}");
+            }
+        }
     }
 
     /**

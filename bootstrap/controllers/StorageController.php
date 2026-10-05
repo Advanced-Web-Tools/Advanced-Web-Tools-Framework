@@ -4,78 +4,56 @@ namespace bootstrap\controllers;
 
 use controller\Controller;
 use response\Response;
-use vfs\cache\Cache;
-use vfs\cache\enums\ECacheValidation;
-use vfs\resource\Resource;
+use vfs\resource\PublicResource;
+use vfs\storage\StorageAccess;
+use vfs\storage\StorageAccessDenied;
 use vfs\storage\StorageRepository;
 
 class StorageController extends Controller
 {
-
     public string $controllerName = 'DefaultStorageController';
 
-    /**
-     * @inheritDoc
-     */
     public function index(array|string $params): Response
     {
-        $uri = $_SERVER['REQUEST_URI'] ?? '';
-        $cache = new Cache();
-        $cachePool = $cache->pool('storage_request');
-        $cached = $cachePool->getCache($uri);
-
-        if (is_array($cached)) {
-            $storageEntry = $cached[0];
-            return Response::make(200)->file($storageEntry);
-        } else {
-            $storageRepository = new StorageRepository();
-            try {
-                $storageEntry = $storageRepository->fetchById($params['id']);
-            } catch (\Exception $e) {
-                return Response::make(404);
-            }
-
-            $path = $storageEntry->getPath();
-
-            $cachePool->createConfig(ECacheValidation::MODIFIED, [str_replace(basename($path), '', $path)]);
-            $cachePool->setCache($uri, [$path]);
-
-            return Response::make(200)->file($path);
+        if (!is_array($params) || !isset($params['id']) || !ctype_digit((string) $params['id'])) return Response::make(404);
+        try {
+            // Always hydrate current metadata and authorize before serving, including database cache hits.
+            $entry = (new StorageRepository())->fetchById((int) $params['id']);
+            StorageAccess::authorize($entry);
+        } catch (\OutOfBoundsException $e) {
+            return Response::make(404);
+        } catch (StorageAccessDenied $e) {
+            return Response::make(403);
         }
+        $path = $entry->getPath();
+        if (!is_file($path) || !is_readable($path)) return Response::make(404);
+        return $this->fileResponse($path);
     }
 
     public function Resource(array|string $params): Response
     {
-        // 1. Check the cache first using the URI
-        $uri = $_SERVER['REQUEST_URI'] ?? '';
-        $cache = new Cache();
-        $cachePool = $cache->pool('resource_request');
-
-        $cached = $cachePool->getCache($uri);
-
-        if (is_array($cached)) {
-            $resourceEntry = $cached[0];
-            if(empty($resourceEntry))
-                return Response::make(404);
-        } else {
-            $cachePool->createConfig(ECacheValidation::MODIFIED, [PACKAGES .  $params["package"]]);
-            $package = $params["package"] ?? 'System';
-            $file = $params["file"] ?? '';
-
-            $resource = new Resource($package);
-            $resourceEntry = $resource->get($file);
-
-            // If it doesn't exist, return 404
-            if ($resourceEntry === null) {
-                $cachePool->setCache($uri, []);
-                return Response::make(404);
-            }
-
-
-            $cachePool->createConfig(ECacheValidation::MODIFIED, [str_replace($file, '', $resourceEntry)])->setCache($uri, [$resourceEntry]);
+        if (!is_array($params)) return Response::make(404);
+        $package = $params['package'] ?? 'System';
+        if (!is_string($package) || !preg_match('/^[a-zA-Z0-9_.-]+$/D', $package) || $package === '.' || $package === '..') return Response::make(404);
+        $segments = [];
+        for ($i = 0; isset($params['resource' . $i]); $i++) $segments[] = rawurldecode($params['resource' . $i]);
+        $segments[] = rawurldecode($params['file'] ?? '');
+        $relative = implode('/', $segments);
+        // Resolve the exact URL path; filename-only recursive lookup is reserved for internal callers.
+        $directory = rtrim(PACKAGES, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $package;
+        $path = $directory . DIRECTORY_SEPARATOR . $relative;
+        foreach (explode('/', $relative) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..' || str_contains($segment, '\\') || str_contains($segment, "\0")) return Response::make(404);
         }
+        if (!PublicResource::allows($package, $path)) return Response::make(404);
+        return $this->fileResponse($path);
+    }
 
-        // 2. Return the file response
-        return Response::make(200)->file($resourceEntry);
+    private function fileResponse(string $path): Response
+    {
+        $response = Response::make(200)->file($path)->header('X-Content-Type-Options', 'nosniff');
+        // Unknown extensions are binary files, regardless of the request Accept header.
+        if ((new \response\resolvers\MimeResolver())->fromPath($path) === null) $response->asFile();
+        return $response;
     }
 }
