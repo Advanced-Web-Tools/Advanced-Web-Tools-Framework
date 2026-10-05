@@ -24,30 +24,29 @@ use RuntimeException;
  */
 class DatabaseProvider implements IProvider
 {
-    private PDO $pdo;
+    private ?PDO $pdo = null;
 
     /**
      * @throws ProviderException
      */
-    public function __construct()
-    {
-        global $shared;
+    public function __construct() {}
 
+    private function connection(): PDO
+    {
+        if ($this->pdo !== null) return $this->pdo;
+        global $shared;
         if (!isset($shared['DBEngine']['PDO'])) {
             $dsn = DB_TYPE . ':host=' . DB_HOSTNAME . ';dbname=' . DB_NAME;
-
             try {
-                $pdo = new PDO($dsn, DB_USERNAME, DB_PASSWORD);
-                $pdo->setAttribute(PDO::ATTR_ERRMODE,    PDO::ERRMODE_EXCEPTION);
-                $pdo->setAttribute(PDO::ATTR_PERSISTENT, true);
-
-                $shared['DBEngine']['PDO'] = $pdo;
+                $shared['DBEngine']['PDO'] = new PDO($dsn, DB_USERNAME, DB_PASSWORD, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_PERSISTENT => true,
+                ]);
             } catch (PDOException $e) {
                 throw new ProviderException("Default", $e);
             }
         }
-
-        $this->pdo = $shared['DBEngine']['PDO'];
+        return $this->pdo = $shared['DBEngine']['PDO'];
     }
 
     /**
@@ -58,7 +57,7 @@ class DatabaseProvider implements IProvider
      */
     public function execute(string $sql, array $bindings = []): PDOStatement
     {
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->connection()->prepare($sql);
 
         foreach ($bindings as $placeholder => $value) {
             $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
@@ -79,6 +78,6 @@ class DatabaseProvider implements IProvider
     /** {@inheritdoc} */
     public function lastInsertId(): int
     {
-        return (int) $this->pdo->lastInsertId();
+        return (int) $this->connection()->lastInsertId();
     }
 }

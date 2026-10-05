@@ -40,7 +40,9 @@ class StorageRepository implements IStorageRepository
 
     public function fetchById(int $id): StorageEntry
     {
-        return new StorageEntry($id);
+        $entry = new StorageEntry($id);
+        if ($entry->path === null) throw new \OutOfBoundsException("Storage entry not found: {$id}");
+        return $entry;
     }
 
     public function fetchByOwner(int $ownerId): array
@@ -107,28 +109,35 @@ class StorageRepository implements IStorageRepository
      */
     public function create(StorageEntry $entry): StorageEntry
     {
-        var_dump($entry->getOwnerId());
-        $id = $entry->saveModel();
+        $id = $this->database->table('awt_storage')->insert($this->data($entry))->executeInsert();
+        if ($id === null) throw new \RuntimeException('Failed to register storage entry.');
+        $entry->id = $id;
         $entry->setModelId($id);
         $entry->setUrl();
-        $entry->save();
+        $this->update($entry);
         return $entry;
     }
 
-    /**
-     * @throws ModelCRUDException
-     */
     public function update(StorageEntry $entry): bool
     {
-        return $entry->save();
+        if ($entry->id === null) throw new \LogicException('Cannot update an unregistered storage entry.');
+        return $this->database->table('awt_storage')->where(['id' => $entry->id])->update($this->data($entry));
     }
 
-    /**
-     * @throws ModelCRUDException
-     */
     public function delete(StorageEntry $entry): bool
     {
-        return $entry->deleteModel();
+        if ($entry->id === null) return false;
+        return $this->database->table('awt_storage')->where(['id' => $entry->id])->delete();
+    }
+
+    private function data(StorageEntry $entry): array
+    {
+        return [
+            'name' => $entry->name, 'path' => $entry->path, 'url' => $entry->url,
+            'size' => $entry->size, 'middleware' => $entry->middleware,
+            'lastModified' => $entry->lastModified, 'ownerId' => $entry->ownerId,
+            'ownerType' => $entry->ownerType instanceof EOwnerType ? $entry->ownerType->value : $entry->ownerType,
+        ];
     }
 
     // ----------------------------------------------------------------

@@ -15,7 +15,7 @@ use router\Router;
  */
 abstract class RuntimeRouterAPI extends RuntimeAPI implements IRouter
 {
-    public array $routers;
+    public array $routers = [];
 
     /**
      * Sets up the environment for the runtime router.

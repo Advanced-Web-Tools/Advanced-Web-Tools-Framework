@@ -5,7 +5,7 @@ namespace database\interface;
 /**
  * Contract for the query result cache.
  *
- * The cache is keyed by (table, SQL string).  Fine-grained invalidation is
+ * The cache is keyed by (table, opaque query key). DatabaseManager includes SQL and bindings in that key.  Fine-grained invalidation is
  * driven by the raw WHERE conditions that were active when the query was
  * cached, enabling column-value–level eviction (e.g. "invalidate everything
  * cached for users WHERE name = 'Alice'").
@@ -16,7 +16,7 @@ interface ICache
      * Return cached rows for the given query, or false on a cache miss.
      *
      * @param string $table The primary table the query targets.
-     * @param string $query The full SQL string used as the cache key.
+     * @param string $query The opaque query cache key.
      *
      * @return array|false Cached rows on hit; false on miss.
      */
@@ -26,7 +26,7 @@ interface ICache
      * Store query results together with the WHERE conditions that produced them.
      *
      * @param string $table      The primary table.
-     * @param string $query      The full SQL string (cache key).
+     * @param string $query      The opaque query cache key.
      * @param array  $result     The rows to cache.
      * @param array  $conditions Raw column → value WHERE pairs (used for
      *                           targeted invalidation later).

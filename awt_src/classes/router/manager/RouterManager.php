@@ -26,7 +26,7 @@ final class RouterManager
 
     public function __construct()
     {
-        $this->currentPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+        $this->currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
     }
 
     /**
@@ -99,16 +99,6 @@ final class RouterManager
      */
     public function startRouter(): View|Redirect|Response
     {
-
-        if($this->currentPath === '/')
-        {
-            if(!isset($this->routesPath['/'])) {
-                $this->handleNotFound();
-                exit();
-            } else {
-                $this->routesPath['/']->route([]);
-            }
-        }
 
         foreach ($this->routesPath as $route) {
             $params = $route->match($this->currentPath);

@@ -53,7 +53,7 @@ abstract class Controller extends View implements IController
         $this->context = $context;
     }
 
-    public function getContext(): Context
+    public function getContext(): ?Context
     {
         return $this->context;
     }
