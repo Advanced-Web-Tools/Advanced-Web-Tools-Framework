@@ -207,7 +207,7 @@ class FrameworkInstallService
         $size = ColumnCreator::INT("size")->default(0);
         $lastModified = ColumnCreator::INT("lastModified")->default(0);
         $middleware = ColumnCreator::VARCHAR("middleware", 255)->nullable();
-        $ownerId = ColumnCreator::INT("ownerId")->nullable()->foreignKey("awt_package", "id", "SET NULL", "CASCADE")->index();
+        $ownerId = ColumnCreator::INT("ownerId")->nullable()->foreignKey("awt_package", "id", "CASCADE", "CASCADE")->index();
         $ownerType = ColumnCreator::VARCHAR("ownerType", 255)->nullable();
 
         $wizard = new TableWizard(1);

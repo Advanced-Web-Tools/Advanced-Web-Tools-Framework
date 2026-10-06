@@ -103,13 +103,8 @@ class PackageInstaller
                 EPackageType::System => 0,
             };
 
-            $installedBy = null;
-            if ($this->admin->checkAuthentication())
-                $installedBy = $this->admin->getParam("id");
-
             $insert = [
                 'store_id' => $this->storeId,
-                'installed_by' => $installedBy,
                 'name' => $this->package->name,
                 'description' => $this->package->description,
                 'icon' => null,

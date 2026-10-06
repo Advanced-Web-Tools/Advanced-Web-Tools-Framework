@@ -215,84 +215,76 @@ class PackageManagerCommand implements CLICommand
             'max'        => "\033[1;34m",
             'license'    => "\033[1;36m",
             'author'     => "\033[1;35m",
-            'installed'  => "\033[1;32m",
             'system'     => "\033[1;33m",
             'type'       => "\033[1;34m",
             'status'     => "\033[1;36m",
             'reset'      => "\033[0m"
         ];
 
-        $colWidths = [
-            'id'          => 5,
-            'name'        => 20,
-            'version'     => 10,
-            'minAwt'      => 10,
-            'maxAwt'      => 10,
-            'license'     => 12,
-            'author'      => 15,
-            'installedBy' => 12,
-            'system'      => 8,
-            'type'        => 10,
-            'status'      => 12
+        $headers = [
+            'id' => 'ID',
+            'name' => 'Name',
+            'version' => 'Version',
+            'min' => 'MinAWT',
+            'max' => 'MaxAWT',
+            'license' => 'License',
+            'author' => 'Author',
+            'system' => 'System',
+            'type' => 'Type',
+            'status' => 'Status'
         ];
 
-        $this->lastResult = "Installed packages:\n";
-
-        // Header row
-        $this->lastResult .= sprintf(
-            "%-{$colWidths['id']}s ".
-            "%-{$colWidths['name']}s ".
-            "%-{$colWidths['version']}s ".
-            "%-{$colWidths['minAwt']}s ".
-            "%-{$colWidths['maxAwt']}s ".
-            "%-{$colWidths['license']}s ".
-            "%-{$colWidths['author']}s ".
-            "%-{$colWidths['installedBy']}s ".
-            "%-{$colWidths['system']}s ".
-            "%-{$colWidths['type']}s ".
-            "%-{$colWidths['status']}s\n",
-
-            'ID', 'Name', 'Version', 'MinAWT', 'MaxAWT',
-            'License', 'Author', 'InstalledBy', 'System', 'Type', 'Status'
-        );
-
-        $this->lastResult .= str_repeat('-', array_sum($colWidths) + 20) . "\n";
-
+        $displayWidth = static fn(string $value): int => function_exists('mb_strwidth')
+            ? mb_strwidth($value, 'UTF-8')
+            : strlen($value);
+        $colWidths = array_map($displayWidth, $headers);
+        $rows = [];
         $packages = (new PackageFacade())->getService()->getInstalled();
 
         foreach ($packages as $package) {
             if (!is_object($package)) continue;
 
             $info = $package->toArray();
+            $row = [
+                'id' => $info['id'] ?? 'N/A',
+                'name' => $info['name'] ?? 'N/A',
+                'version' => $info['version'] ?? 'N/A',
+                'min' => $info['minimum_awt_version'] ?? 'N/A',
+                'max' => $info['maximum_awt_version'] ?? 'N/A',
+                'license' => $info['license'] ?? 'N/A',
+                'author' => $info['author'] ?? 'N/A',
+                'system' => $package->getSystem() ? 'Yes' : 'No',
+                'type' => $info['type'] ?? 'N/A',
+                'status' => $package->getStatus() ? 'Enabled' : 'Disabled'
+            ];
 
-            $this->lastResult .= sprintf(
-                "%s%-{$colWidths['id']}s%s ".
-                "%s%-{$colWidths['name']}s%s ".
-                "%s%-{$colWidths['version']}s%s ".
-                "%s%-{$colWidths['minAwt']}s%s ".
-                "%s%-{$colWidths['maxAwt']}s%s ".
-                "%s%-{$colWidths['license']}s%s ".
-                "%s%-{$colWidths['author']}s%s ".
-                "%s%-{$colWidths['installedBy']}s%s ".
-                "%s%-{$colWidths['system']}s%s ".
-                "%s%-{$colWidths['type']}s%s ".
-                "%s%-{$colWidths['status']}s%s\n",
+            foreach ($row as $column => $value) {
+                $row[$column] = (string) $value;
+                $colWidths[$column] = max($colWidths[$column], $displayWidth($row[$column]));
+            }
+            $rows[] = $row;
+        }
 
-                $colors['id'],        $info['id'] ?? 'N/A',                $colors['reset'],
-                $colors['name'],      $info['name'] ?? 'N/A',              $colors['reset'],
-                $colors['version'],   $info['version'] ?? 'N/A',           $colors['reset'],
-                $colors['min'],       $info['minimum_awt_version'] ?? 'N/A', $colors['reset'],
-                $colors['max'],       $info['maximum_awt_version'] ?? 'N/A', $colors['reset'],
-                $colors['license'],   $info['license'] ?? 'N/A',           $colors['reset'],
-                $colors['author'],    $info['author'] ?? 'N/A',            $colors['reset'],
-                $colors['installed'], $info['installed_by'] ?? 'AWT',       $colors['reset'],
-                $colors['system'],    ($package->getSystem() ? 'Yes' : 'No'),            $colors['reset'],
-                $colors['type'],      $info['type'] ?? 'N/A',              $colors['reset'],
-                $colors['status'],    ($package->getStatus() ? 'Enabled' : 'Disabled'),            $colors['reset']
-            );
+        $pad = static fn(string $value, string $column): string => $value
+            . str_repeat(' ', $colWidths[$column] - $displayWidth($value));
+
+        $headerCells = [];
+        foreach ($headers as $column => $label) {
+            $headerCells[] = $pad($label, $column);
+        }
+
+        $this->lastResult = "Installed packages:\n";
+        $this->lastResult .= implode(' ', $headerCells) . "\n";
+        $this->lastResult .= str_repeat('-', array_sum($colWidths) + count($headers) - 1) . "\n";
+
+        foreach ($rows as $row) {
+            $cells = [];
+            foreach ($row as $column => $value) {
+                $cells[] = $colors[$column] . $pad($value, $column) . $colors['reset'];
+            }
+            $this->lastResult .= implode(' ', $cells) . "\n";
         }
     }
-
 
 
     public function result(): string

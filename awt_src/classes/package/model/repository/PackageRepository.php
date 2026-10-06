@@ -47,7 +47,7 @@ class PackageRepository extends DatabaseManager implements IPackageRepository
         $data = array_intersect_key($data, array_flip([
             'name', 'author', 'description', 'icon', 'preview_image', 'version',
             'minimum_awt_version', 'maximum_awt_version', 'type', 'system_package',
-            'license', 'license_url', 'dependencies', 'store_id', 'installed_by',
+            'license', 'license_url', 'dependencies', 'store_id',
         ]));
         $data['dependencies'] = json_encode($data['dependencies'] ?? [], JSON_THROW_ON_ERROR);
         $data["installation_date"] = date("Y-m-d H:i:s");

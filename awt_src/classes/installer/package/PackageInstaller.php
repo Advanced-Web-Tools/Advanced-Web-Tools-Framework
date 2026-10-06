@@ -19,6 +19,7 @@ readonly class PackageInstaller implements IPackageInstaller
         private IPackageMover                $mover,
         private IPackageStorageTreeGenerator $storageGenerator,
         private IPackageRepository           $packageRepository,
+        private PackageAssetLinks            $assetLinks = new PackageAssetLinks(),
     ) {}
 
     /**
@@ -37,7 +38,7 @@ readonly class PackageInstaller implements IPackageInstaller
 
         $manifestPath = $packageDir . DIRECTORY_SEPARATOR . 'manifest.json';
 
-        $manifest = ManifestReader::validate(json_decode(file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR));
+        $manifest = ManifestReader::readFile($manifestPath);
         if (defined('AWT_VERSION') && (version_compare(AWT_VERSION, $manifest['minimum_awt_version'], '<')
             || (!empty($manifest['maximum_awt_version']) && version_compare(AWT_VERSION, $manifest['maximum_awt_version'], '>')))) {
             throw new RuntimeException('Package is incompatible with this AWT version.');
@@ -95,6 +96,7 @@ readonly class PackageInstaller implements IPackageInstaller
             $this->storageGenerator->setPackageId($packageId);
             $this->storageGenerator->buildStorageTree()->generate();
             $this->storageGenerator->registerItems();
+            $this->assetLinks->register($packageId, PACKAGE_STORAGE . $packageName, $manifest);
         }
 
         $hookFile = $destination . DIRECTORY_SEPARATOR . 'install.php';

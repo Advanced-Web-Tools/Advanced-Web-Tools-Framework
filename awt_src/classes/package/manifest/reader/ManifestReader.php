@@ -15,7 +15,19 @@ readonly class ManifestReader implements IManifestReader
     }
     public function getManifest(): array
     {
-        return self::validate(json_decode(file_get_contents($this->manifestPath), true, 512, JSON_THROW_ON_ERROR));
+        return self::readFile($this->manifestPath);
+    }
+    public static function readFile(string $path): array
+    {
+        $json = file_get_contents($path);
+        if ($json === false) throw new \RuntimeException("Cannot read package manifest: {$path}");
+        if (str_starts_with($json, "\xEF\xBB\xBF")) $json = substr($json, 3);
+        try {
+            $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $error) {
+            throw new \JsonException("Invalid JSON in package manifest {$path}: " . $error->getMessage(), $error->getCode(), $error);
+        }
+        return self::validate($manifest);
     }
     public static function validate(mixed $manifest): array
     {
