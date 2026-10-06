@@ -66,10 +66,10 @@ class CachePool
         return false;
     }
 
-    public function deleteCache(string $name): bool
+    public function deleteCache(string $name, bool $missingIsSuccess = false): bool
     {
         $entry = $this->transientStorage->getFile($this->cacheFileName($name) . '.php');
-        return $entry !== null && $this->transientStorage->deleteFile($entry);
+        return $entry === null ? $missingIsSuccess : $this->transientStorage->deleteFile($entry);
     }
 
     private function validate(array $data): bool

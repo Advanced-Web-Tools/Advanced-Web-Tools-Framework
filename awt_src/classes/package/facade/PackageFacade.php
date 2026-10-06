@@ -40,6 +40,11 @@ class PackageFacade
         return $this->service->getPackage($name);
     }
 
+    public function getPackageById(int $id): InstalledPackage
+    {
+        return new InstalledPackage($id);
+    }
+
     public function getActive(): array
     {
         return $this->service->getActive();

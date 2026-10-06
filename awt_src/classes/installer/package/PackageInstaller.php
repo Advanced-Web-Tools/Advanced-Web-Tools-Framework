@@ -19,7 +19,6 @@ readonly class PackageInstaller implements IPackageInstaller
         private IPackageMover                $mover,
         private IPackageStorageTreeGenerator $storageGenerator,
         private IPackageRepository           $packageRepository,
-        private LegacyPackageDataCompatibility $legacyData = new LegacyPackageDataCompatibility(),
     ) {}
 
     /**
@@ -96,7 +95,6 @@ readonly class PackageInstaller implements IPackageInstaller
             $this->storageGenerator->setPackageId($packageId);
             $this->storageGenerator->buildStorageTree()->generate();
             $this->storageGenerator->registerItems();
-            $this->legacyData->register($dataDir, $packageId, $packageName, $manifest);
         }
 
         $hookFile = $destination . DIRECTORY_SEPARATOR . 'install.php';

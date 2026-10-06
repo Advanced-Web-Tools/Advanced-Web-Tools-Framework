@@ -2,12 +2,18 @@
 
 namespace cli\commands;
 
-use cli\commands\PackageManager\Install;
 use cli\interfaces\CLICommand;
-use packages\enums\EPackageStatus;
-use packages\installer\PackageInstaller;
-use packages\manager\PackageManager;
+use installer\package\Extractor;
+use installer\package\PackageInstaller;
+use installer\package\PackageMover;
+use installer\package\PackageStorageTreeGenerator;
+use package\facade\PackageFacade;
 use Throwable;
+use uninstaller\PackageUninstaller;
+use vfs\storage\services\LocalFileSystemService;
+use vfs\storage\StorageRepository;
+use vfs\transient\TransientStorageEntry;
+use ZipArchive;
 
 class PackageManagerCommand implements CLICommand
 {
@@ -37,6 +43,7 @@ class PackageManagerCommand implements CLICommand
 
     public function execute(string $command, array $args = []): void
     {
+        $this->lastResult = '';
         $action = $args[0] ?? '';
         $pathOrId = $args[1] ?? '';
 
@@ -51,8 +58,7 @@ class PackageManagerCommand implements CLICommand
                     $this->lastResult = "No path given.\nSpecify the path or URL to a zip package.\n";
                     return;
                 }
-                $installer = new Install($pathOrId);
-                $installer->install();
+                $this->install($pathOrId);
                 break;
 
             case 'remove':
@@ -76,11 +82,12 @@ class PackageManagerCommand implements CLICommand
             case 'disable':
                 if (empty($pathOrId)) {
                     $this->lastResult = "No package ID given for disabling.\n";
+                    return;
                 }
                 $this->disable($pathOrId);
                 break;
             default:
-                $this->lastResult = "Unknown action: {$action}\nUse install or remove.\n";
+                $this->lastResult = "Unknown action: {$action}\nUse install, remove, enable, disable, or list.\n";
                 break;
         }
     }
@@ -95,7 +102,11 @@ class PackageManagerCommand implements CLICommand
             return;
         }
 
-        $tmpFile = tempnam(TEMP, "awt_zip_") . ".zip";
+        $tmpFile = tempnam(TEMP, "awt_zip_");
+        if ($tmpFile === false) {
+            $this->lastResult = "Failed to create temporary file.";
+            return;
+        }
 
         try {
             if (str_starts_with($path, 'http')) {
@@ -123,26 +134,19 @@ class PackageManagerCommand implements CLICommand
                 curl_close($ch);
                 fclose($fp);
             } else {
-                copy($path, $tmpFile);
+                if (!copy($path, $tmpFile)) {
+                    throw new \RuntimeException("Failed to copy package archive.");
+                }
             }
 
-            $fakeFile = [
-                "name" => basename($path),
-                "type" => "application/zip",
-                "tmp_name" => $tmpFile,
-                "error" => 0,
-                "size" => filesize($tmpFile)
-            ];
-
-            $installer = new PackageInstaller($fakeFile);
-            $installer
-                ->setDataOwner("AWT")
-                ->uploadPackage(true)
-                ->extractPackage(true)
-                ->installPackage()
-                ->transferPackageFiles()
-                ->extractData()
-                ->cleanUp();
+            $facade = new PackageFacade();
+            $installer = new PackageInstaller(
+                new Extractor(new ZipArchive(), new TransientStorageEntry(basename($tmpFile), $tmpFile), TEMP . 'installer'),
+                new PackageMover('', PACKAGES),
+                new PackageStorageTreeGenerator(new LocalFileSystemService(), new StorageRepository()),
+                $facade->getRepository()
+            );
+            $installer->execute();
 
             $this->lastResult = "Package installed successfully.";
 
@@ -158,9 +162,11 @@ class PackageManagerCommand implements CLICommand
     private function remove(string $packageId): void
     {
         try {
-            $manager = new PackageManager();
-            $manager->fetchPackages();
-            $manager->removePackage((int)$packageId, true);
+            $uninstaller = new PackageUninstaller();
+            if (!$uninstaller->uninstall((int)$packageId)) {
+                $this->lastResult = "Failed to remove package: " . implode("\n", $uninstaller->getErrors());
+                return;
+            }
             $this->lastResult = "Package {$packageId} removed successfully.";
         } catch (Throwable $e) {
             $this->lastResult = "Failed to remove package: {$e->getMessage()}";
@@ -170,9 +176,13 @@ class PackageManagerCommand implements CLICommand
     private function enable(string $packageId): void
     {
         try {
-            $manager = new PackageManager();
-            $manager->fetchPackages();
-            $manager->enablePackage((int)$packageId);
+            $package = (new PackageFacade())->getPackageById((int)$packageId);
+            if ($package->getStatus() !== true) {
+                $package->setStatus(true);
+                if (!$package->save()) {
+                    throw new \RuntimeException('Failed to persist package status.');
+                }
+            }
             $this->lastResult = "Package {$packageId} enabled.";
         } catch (Throwable $e) {
             $this->lastResult = "Failed to enable package: {$e->getMessage()}";
@@ -182,9 +192,13 @@ class PackageManagerCommand implements CLICommand
     private function disable(string $packageId): void
     {
         try {
-            $manager = new PackageManager();
-            $manager->fetchPackages();
-            $manager->disablePackage((int)$packageId);
+            $package = (new PackageFacade())->getPackageById((int)$packageId);
+            if ($package->getStatus() !== false) {
+                $package->setStatus(false);
+                if (!$package->save()) {
+                    throw new \RuntimeException('Failed to persist package status.');
+                }
+            }
             $this->lastResult = "Package {$packageId} disabled.";
         } catch (Throwable $e) {
             $this->lastResult = "Failed to disable package: {$e->getMessage()}";
@@ -244,14 +258,12 @@ class PackageManagerCommand implements CLICommand
 
         $this->lastResult .= str_repeat('-', array_sum($colWidths) + 20) . "\n";
 
-        $manager = new PackageManager();
-        $manager->fetchPackages();
-        $packages = $manager->getPackages();
+        $packages = (new PackageFacade())->getService()->getInstalled();
 
         foreach ($packages as $package) {
             if (!is_object($package)) continue;
 
-            $info = $package->getInfo();
+            $info = $package->toArray();
 
             $this->lastResult .= sprintf(
                 "%s%-{$colWidths['id']}s%s ".
@@ -269,14 +281,14 @@ class PackageManagerCommand implements CLICommand
                 $colors['id'],        $info['id'] ?? 'N/A',                $colors['reset'],
                 $colors['name'],      $info['name'] ?? 'N/A',              $colors['reset'],
                 $colors['version'],   $info['version'] ?? 'N/A',           $colors['reset'],
-                $colors['min'],       $info['minimumAwtVersion'] ?? 'N/A', $colors['reset'],
-                $colors['max'],       $info['maximumAwtVersion'] ?? 'N/A', $colors['reset'],
+                $colors['min'],       $info['minimum_awt_version'] ?? 'N/A', $colors['reset'],
+                $colors['max'],       $info['maximum_awt_version'] ?? 'N/A', $colors['reset'],
                 $colors['license'],   $info['license'] ?? 'N/A',           $colors['reset'],
                 $colors['author'],    $info['author'] ?? 'N/A',            $colors['reset'],
-                $colors['installed'], $info['installedBy'] ?? 'N/A',       $colors['reset'],
-                $colors['system'],    $info['system'] ?? 'N/A',            $colors['reset'],
+                $colors['installed'], $info['installed_by'] ?? 'AWT',       $colors['reset'],
+                $colors['system'],    ($package->getSystem() ? 'Yes' : 'No'),            $colors['reset'],
                 $colors['type'],      $info['type'] ?? 'N/A',              $colors['reset'],
-                $colors['status'],    $info['status'] ?? 'N/A',            $colors['reset']
+                $colors['status'],    ($package->getStatus() ? 'Enabled' : 'Disabled'),            $colors['reset']
             );
         }
     }
