@@ -2,7 +2,7 @@
 
 namespace database\provider;
 
-require CONFIG . '/awt_db.php';
+require_once CONFIG . '/awt_db.php';
 
 use database\exceptions\ProviderException;
 use database\interface\IProvider;

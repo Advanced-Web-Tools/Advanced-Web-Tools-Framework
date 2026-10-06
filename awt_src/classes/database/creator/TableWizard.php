@@ -54,7 +54,7 @@ class TableWizard
      * @param ITableRegistry       $registry   Reads and writes the framework schema registry.
      */
     public function __construct(
-        private readonly int                  $creatorId,
+        private readonly int                  $creatorId = 0,
         private readonly ITableSchemaProvider $schema = new TableSchemaProvider(new DatabaseProvider()),
         private readonly ITableRegistry       $registry = new TableRegistry(new DatabaseManager()),
     ) {
@@ -74,7 +74,7 @@ class TableWizard
      *
      * @param int $creatorId The package/plugin ID for the new tables.
      */
-    public static function create(int $creatorId): self
+    public static function create(int $creatorId = 0): self
     {
         $provider = new DatabaseProvider();
         $db       = new DatabaseManager($provider, new QueryBuilder(), new DatabaseCache());
@@ -124,7 +124,7 @@ class TableWizard
      */
     public function createTable(string $tableName): bool
     {
-        if ($this->registry->tableExists($tableName)) {
+        if (!$this->headless && $this->registry->tableExists($tableName)) {
             return false;
         }
 
