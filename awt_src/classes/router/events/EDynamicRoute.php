@@ -3,7 +3,7 @@
 namespace router\events;
 
 use event\interfaces\IEvent;
-use router\Router;
+use router\interface\IRoute;
 
 final class EDynamicRoute implements IEvent
 {
@@ -15,7 +15,7 @@ final class EDynamicRoute implements IEvent
         return "route.dynamic.add";
     }
 
-    public function addRoute(Router $router): void
+    public function addRoute(IRoute $router): void
     {
         $this->routes[] = $router;
     }

@@ -1,6 +1,6 @@
 <?php
 namespace runtime\api;
-use router\Router;
+use router\interface\IRoute;
 use router\interface\IRouter;
 use runtime\enums\ERuntimeFlags;
 use runtime\interface\api\IRuntimeRouterCapabilities;
@@ -14,9 +14,9 @@ abstract class RuntimeRouterAPI extends RuntimeAPI implements IRuntimeRouterCapa
             $this->setRuntimeFlag($flag);
         }
     }
-    public function addRouter(Router $router): void
+    public function addRouter(IRoute $router): void
     {
-        $router->eventDispatcher = $this->eventDispatcher;
+        $router->addEventDispatcher($this->eventDispatcher);
         $this->routers[] = $router;
     }
     public function getRouters(): array { return $this->routers; }

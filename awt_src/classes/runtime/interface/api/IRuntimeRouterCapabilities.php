@@ -17,6 +17,6 @@ namespace runtime\interface\api;
 
 interface IRuntimeRouterCapabilities extends IRuntimeBaseCapabilities
 {
-    public function addRouter(\router\Router $router): void;
+    public function addRouter(\router\interface\IRoute $router): void;
     public function getRouters(): array;
 }
