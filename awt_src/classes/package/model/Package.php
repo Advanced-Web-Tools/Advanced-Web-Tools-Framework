@@ -231,6 +231,7 @@ class Package extends Model
     {
         $dependencies = $this->getDependencies();
         $this->encodeDependencies();
+        $this->model_source = "awt_package";
         try { return parent::saveModel(); }
         finally { $this->dependencies = $dependencies; }
     }
