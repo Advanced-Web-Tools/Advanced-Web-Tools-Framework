@@ -33,6 +33,7 @@ class PackageManagerCommand implements CLICommand
     {
         return [
             "install" => "Installs a package",
+            "update" => "Updates an installed package",
             "remove" => "Removes a package",
             "enable" => "Enables a package",
             "disable" => "Disables a package",
@@ -48,17 +49,18 @@ class PackageManagerCommand implements CLICommand
         $pathOrId = $args[1] ?? '';
 
         if (empty($action)) {
-            $this->lastResult = "No action given.\nSpecify one of the following actions: install, remove, enable, disable, list.\n";
+            $this->lastResult = "No action given.\nSpecify one of the following actions: install, update, remove, enable, disable, list.\n";
             return;
         }
 
         switch (strtolower($action)) {
             case 'install':
+            case 'update':
                 if (empty($pathOrId)) {
                     $this->lastResult = "No path given.\nSpecify the path or URL to a zip package.\n";
                     return;
                 }
-                $this->install($pathOrId);
+                $this->install($pathOrId, strtolower($action) === 'update');
                 break;
 
             case 'remove':
@@ -87,12 +89,12 @@ class PackageManagerCommand implements CLICommand
                 $this->disable($pathOrId);
                 break;
             default:
-                $this->lastResult = "Unknown action: {$action}\nUse install, remove, enable, disable, or list.\n";
+                $this->lastResult = "Unknown action: {$action}\nUse install, update, remove, enable, disable, or list.\n";
                 break;
         }
     }
 
-    private function install(string $path): void
+    private function install(string $path, bool $updating = false): void
     {
         if(str_contains($path, '"'))
             $path = str_replace('"', '', $path);
@@ -146,12 +148,16 @@ class PackageManagerCommand implements CLICommand
                 new PackageStorageTreeGenerator(new LocalFileSystemService(), new StorageRepository()),
                 $facade->getRepository()
             );
-            $installer->execute();
+            if ($updating) {
+                if (!$installer->update()) throw new \RuntimeException('Package update failed.');
+            } else {
+                $installer->execute();
+            }
 
-            $this->lastResult = "Package installed successfully.";
+            $this->lastResult = $updating ? "Package updated successfully." : "Package installed successfully.";
 
         } catch (Throwable $e) {
-            $this->lastResult = "Failed to install package: {$e->getMessage()}";
+            $this->lastResult = ($updating ? "Failed to update package: " : "Failed to install package: ") . $e->getMessage();
         } finally {
             if (file_exists($tmpFile)) {
                 unlink($tmpFile);
@@ -176,13 +182,7 @@ class PackageManagerCommand implements CLICommand
     private function enable(string $packageId): void
     {
         try {
-            $package = (new PackageFacade())->getPackageById((int)$packageId);
-            if ($package->getStatus() !== true) {
-                $package->setStatus(true);
-                if (!$package->save()) {
-                    throw new \RuntimeException('Failed to persist package status.');
-                }
-            }
+            (new PackageFacade())->enablePackage((int) $packageId);
             $this->lastResult = "Package {$packageId} enabled.";
         } catch (Throwable $e) {
             $this->lastResult = "Failed to enable package: {$e->getMessage()}";
@@ -192,13 +192,7 @@ class PackageManagerCommand implements CLICommand
     private function disable(string $packageId): void
     {
         try {
-            $package = (new PackageFacade())->getPackageById((int)$packageId);
-            if ($package->getStatus() !== false) {
-                $package->setStatus(false);
-                if (!$package->save()) {
-                    throw new \RuntimeException('Failed to persist package status.');
-                }
-            }
+            (new PackageFacade())->disablePackage((int) $packageId);
             $this->lastResult = "Package {$packageId} disabled.";
         } catch (Throwable $e) {
             $this->lastResult = "Failed to disable package: {$e->getMessage()}";

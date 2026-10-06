@@ -2,7 +2,7 @@
 
 namespace installer\interfaces\package;
 
-use packages\exceptions\RuntimeException;
+use RuntimeException;
 
 interface IPackageInstaller
 {
@@ -12,6 +12,8 @@ interface IPackageInstaller
      * @return bool
      */
     public function install(): bool;
+
+    public function update(): bool;
 
     /**
      * Executes the installer actions.

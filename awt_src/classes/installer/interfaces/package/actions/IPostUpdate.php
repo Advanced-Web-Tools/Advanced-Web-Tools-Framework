@@ -10,5 +10,5 @@ interface IPostUpdate
      * @param int $packageId
      * @return void
      */
-    public function postUpdate(int $packageId): void;
+    public function postUpdate(int $packageId, string $packageName): void;
 }

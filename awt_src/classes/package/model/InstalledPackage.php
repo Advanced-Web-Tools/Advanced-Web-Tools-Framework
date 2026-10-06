@@ -7,8 +7,16 @@ use package\model\Package;
 class InstalledPackage extends Package
 {
     public int $id;
-    public bool $status;
-    public string $installation_date;
+    public bool $status = false;
+    public string $installation_date = '';
+
+    public function getInfo(): array
+    {
+        return array_merge(parent::getInfo(), [
+            'id' => $this->id, 'installationDate' => $this->installation_date,
+            'status' => $this->status ? 'Active' : 'Disabled',
+        ]);
+    }
 
     public function getId(): int
     {

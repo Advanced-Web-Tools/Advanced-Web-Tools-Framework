@@ -19,9 +19,9 @@ class PackageFacade
     private IPackageService $service;
 
 
-    public function __construct()
+    public function __construct(?IPackageRepository $repository = null)
     {
-        $this->repository = new PackageRepository();
+        $this->repository = $repository ?? new PackageRepository();
         $this->service = new PackageService($this->repository);
     }
 
@@ -42,7 +42,24 @@ class PackageFacade
 
     public function getPackageById(int $id): InstalledPackage
     {
-        return new InstalledPackage($id);
+        return $this->service->getPackageById($id) ?? throw new \OutOfBoundsException("Package with ID {$id} not found.");
+    }
+
+    public function getInstalled(): array { return $this->service->getInstalled(); }
+    public function enablePackage(int $id): void { $this->service->enablePackage($id); }
+    public function disablePackage(int $id): void { $this->service->disablePackage($id); }
+
+    /** Remove code and resource records; purge also removes owned storage and tables. */
+    public function removePackage(int $id, bool $purge = false): void
+    {
+        $steps = $purge ? null : [
+            new \uninstaller\cleanup\PackageFilesCleanup(PACKAGES),
+            new \uninstaller\cleanup\ResourceCleanup(PACKAGES),
+        ];
+        $uninstaller = new \uninstaller\PackageUninstaller($steps, $this);
+        if (!$uninstaller->uninstall($id)) {
+            throw new \RuntimeException(implode("\n", $uninstaller->getErrors()));
+        }
     }
 
     public function getActive(): array

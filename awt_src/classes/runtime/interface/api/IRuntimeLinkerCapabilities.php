@@ -17,5 +17,7 @@ namespace runtime\interface\api;
 
 interface IRuntimeLinkerCapabilities extends IRuntimeBaseCapabilities
 {
+    public function getLinks(): array;
+
     public function createLink(string $name, string $path): void;
 }

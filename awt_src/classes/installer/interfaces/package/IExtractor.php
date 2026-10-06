@@ -1,6 +1,6 @@
 <?php
 namespace installer\interfaces\package;
-use packages\exceptions\RuntimeException;
+use RuntimeException;
 use vfs\transient\interfaces\ITransientStorageEntry;
 use ZipArchive;
 interface IExtractor

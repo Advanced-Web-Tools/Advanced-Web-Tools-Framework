@@ -60,7 +60,7 @@ class PackageUninstaller implements IPackageUninstaller
             if ($name === '' || $name === '.' || $name === '..' || strpbrk($name, "/\\\0") !== false) {
                 throw new \InvalidArgumentException('Invalid package directory name.');
             }
-            $package->deleteModel();
+            if (!$package->deleteModel()) throw new \RuntimeException('Failed to delete package record.');
         } catch (\Throwable $error) {
             $this->errors[] = 'Package lookup: ' . $error->getMessage();
             return false;

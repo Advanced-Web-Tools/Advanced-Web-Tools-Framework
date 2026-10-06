@@ -11,6 +11,7 @@ abstract class RuntimeLinkerAPI extends RuntimeAPI implements IRuntimeLinkerCapa
         $this->setRuntimeFlag(ERuntimeFlags::RuntimeLinker);
         $this->setRuntimeFlag(ERuntimeFlags::CreatePassable);
     }
+    public function getLinks(): array { return $this->links; }
     public function createLink(string $name, string $path): void
     {
         $this->links[$name] = $this->rootPath . '/' . ltrim($path, '/');

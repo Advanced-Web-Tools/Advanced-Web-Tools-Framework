@@ -20,7 +20,7 @@ class PackageFilesCleanup implements IPackageCleanup
         if ($name === '' || $name === '.' || $name === '..' || strpbrk($name, "/\\\0") !== false) {
             return ['Invalid package directory name.'];
         }
-        $path = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $name;
+        $path = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace(' ', '', $name);
         if (!file_exists($path) && !is_link($path)) {
             return [];
         }

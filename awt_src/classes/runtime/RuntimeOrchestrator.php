@@ -17,7 +17,7 @@ final class RuntimeOrchestrator implements IRuntimeOrchestrator
     {
         foreach ($runtimes as $runtime) {
             $name = $runtime->getRuntimeName();
-            if (isset($this->byName[$name])) throw new \RuntimeException("Duplicate runtime package: {$name}");
+            if (isset($this->byName[$name])) throw new \runtime\exceptions\RuntimeException("Duplicate runtime package: {$name}");
             $this->byName[$name] = $runtime;
         }
         if ($installed === []) {
@@ -41,28 +41,28 @@ final class RuntimeOrchestrator implements IRuntimeOrchestrator
         foreach ($this->byName as $name => $runtime) {
             $package = $runtime->getPackage();
             if (!is_file($runtime->getRootPath() . 'main.php')) {
-                throw new \RuntimeException("Package {$name} has no main.php entry point.");
+                throw new \runtime\exceptions\RuntimeException("Package {$name} has no main.php entry point.");
             }
             if (defined('AWT_VERSION') && (version_compare(AWT_VERSION, $package->minimum_awt_version, '<')
                 || ($package->maximum_awt_version !== null && version_compare(AWT_VERSION, $package->maximum_awt_version, '>')))) {
-                throw new \RuntimeException("Package {$name} is incompatible with AWT " . AWT_VERSION);
+                throw new \runtime\exceptions\RuntimeException("Package {$name} is incompatible with AWT " . AWT_VERSION);
             }
             foreach ($package->getDependencies() as $dependency) {
                 $target = $installed[$dependency['name']] ?? null;
-                if ($target === null) throw new \RuntimeException("Package {$name} requires missing package {$dependency['name']}.");
-                if (!$target->getStatus()) throw new \RuntimeException("Package {$name} requires disabled package {$dependency['name']}.");
+                if ($target === null) throw new \runtime\exceptions\RuntimeException("Package {$name} requires missing package {$dependency['name']}.");
+                if (!$target->getStatus()) throw new \runtime\exceptions\RuntimeException("Package {$name} requires disabled package {$dependency['name']}.");
                 if (!\package\dependency\Dependency::matchesVersion($target->getVersion(), $dependency['version'])) {
-                    throw new \RuntimeException("Package {$name} requires {$dependency['name']} {$dependency['version']}; installed {$target->version}.");
+                    throw new \runtime\exceptions\RuntimeException("Package {$name} requires {$dependency['name']} {$dependency['version']}; installed {$target->version}.");
                 }
                 if ($target->type !== 0 && !isset($this->byName[$target->name])) {
-                    throw new \RuntimeException("Dependency {$target->name} has no executable runtime.");
+                    throw new \runtime\exceptions\RuntimeException("Dependency {$target->name} has no executable runtime.");
                 }
             }
         }
         $visited = [];
         $visiting = [];
         $visit = function (string $name) use (&$visit, &$visited, &$visiting): void {
-            if (isset($visiting[$name])) throw new \RuntimeException('Circular manifest dependency: ' . implode(' -> ', array_keys($visiting)) . ' -> ' . $name);
+            if (isset($visiting[$name])) throw new \runtime\exceptions\RuntimeException('Circular manifest dependency: ' . implode(' -> ', array_keys($visiting)) . ' -> ' . $name);
             if (isset($visited[$name])) return;
             $visiting[$name] = true;
             foreach ($this->byName[$name]->getPackage()->getDependencies() as $dep) {
@@ -77,8 +77,8 @@ final class RuntimeOrchestrator implements IRuntimeOrchestrator
     private function runPackage(string $name): void
     {
         if (isset($this->loaded[$name])) return;
-        $runtime = $this->byName[$name] ?? throw new \RuntimeException("Cannot wait for missing, disabled, or non-runtime package {$name}.");
-        if (isset($this->stack[$name])) throw new \RuntimeException('Circular runtime wait: ' . implode(' -> ', array_keys($this->stack)) . ' -> ' . $name);
+        $runtime = $this->byName[$name] ?? throw new \runtime\exceptions\RuntimeException("Cannot wait for missing, disabled, or non-runtime package {$name}.");
+        if (isset($this->stack[$name])) throw new \runtime\exceptions\RuntimeException('Circular runtime wait: ' . implode(' -> ', array_keys($this->stack)) . ' -> ' . $name);
         $this->stack[$name] = true;
         $runtime->setRuntimeStatus(ERuntimeStatus::RUNNING);
         try {

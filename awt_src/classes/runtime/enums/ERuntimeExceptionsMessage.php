@@ -1,8 +1,7 @@
 <?php
 
-namespace packages\exceptions\enums;
+namespace runtime\enums;
 
-use exception\ExceptionBase;
 
 enum ERuntimeExceptionsMessage: string
 {
