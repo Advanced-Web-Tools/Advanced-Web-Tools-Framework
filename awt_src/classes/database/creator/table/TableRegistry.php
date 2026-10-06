@@ -107,15 +107,13 @@ class TableRegistry implements ITableRegistry
 
         // Remove all column entries first to satisfy any foreign key constraints
         // on awt_table_structure that reference awt_table.id.
-        $this->db
-            ->table('awt_table_structure')
-            ->where(['table_id' => $tableId])
-            ->delete();
-
-        $this->db
-            ->table('awt_table')
-            ->where(['id' => $tableId])
-            ->delete();
+        $this->db->transaction(function () use ($tableId, $name): void {
+            // Tables with no registered columns legitimately delete zero column rows.
+            $this->db->table('awt_table_structure')->where(['table_id' => $tableId])->delete();
+            if (!$this->db->table('awt_table')->where(['id' => $tableId])->delete()) {
+                throw new \RuntimeException("Failed to unregister table: {$name}");
+            }
+        });
     }
 
     /** {@inheritdoc} */
@@ -161,5 +159,14 @@ class TableRegistry implements ITableRegistry
             ->table('awt_table_structure')
             ->where(['table_id' => $tableId, 'column_name' => $oldName])
             ->update(['column_name' => $newName]);
+    }
+
+    /** {@inheritdoc} */
+    public function findByOwner(int $ownerId): array
+    {
+        $rows = $this->db->table('awt_table')->select(['name'])
+            ->where(['creator' => $ownerId])->get();
+
+        return array_column($rows, 'name');
     }
 }

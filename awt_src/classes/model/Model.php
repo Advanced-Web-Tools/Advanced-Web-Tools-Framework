@@ -8,7 +8,6 @@ use model\exceptions\ModelCRUDException;
 use model\interfaces\IRelationBelongs;
 use model\interfaces\IRelationHasMany;
 use model\interfaces\IRelationWith;
-use object\ObjectFactory;
 use ReflectionClass;
 use ReflectionProperty;
 use Throwable;
@@ -22,7 +21,7 @@ use Throwable;
  * It serves as a base class for specific models that represent database
  * entities.
  */
-abstract class Model extends DatabaseManager
+abstract class Model extends DatabaseManager implements \JsonSerializable
 {
 
     public ?string $model_source = null;
@@ -36,9 +35,23 @@ abstract class Model extends DatabaseManager
      * Initializes the Model by calling the parent constructor of
      * DatabaseManager.
      */
-    public function __construct()
-    {
-        parent::__construct();
+    private array $ormOriginal = [];
+    private array $ormMissingAttributes = [];
+    private array $ormLoadedKeys = [];
+    private static array $ormLoading = [];
+    private array $ormRelationKeys = [];
+    private array $ormLastChanges = [];
+
+    public function __construct(
+        ?\database\interface\IProvider $provider = null,
+        ?\database\query\QueryBuilder $builder = null,
+        ?\database\interface\ICache $cache = null,
+    ) {
+        parent::__construct(
+            $provider ?? new \database\provider\DatabaseProvider(),
+            $builder ?? new \database\query\QueryBuilder(),
+            $cache ?? new \database\cache\DatabaseCache(),
+        );
     }
 
     /**
@@ -56,31 +69,16 @@ abstract class Model extends DatabaseManager
     {
         if ($id === null) return;
 
-        $table = $table ?: $this->inferTableName();
-        $column = $column ?: 'id';
+        $table = $table ?: ($this->model_source ?: $this->inferTableName());
+        $column = $column ?: ($this->id_column ?: 'id');
 
         try {
-            $result = $this->table($table)->select()->where([$column => $id])->get();
-
-            if (empty($result) || !isset($result[0]) || !is_array($result[0])) {
-                return;
-            }
-
-            $row = $result[0];
-
-            foreach ($row as $key => $value) {
-                $this->{$key} = $value;
-            }
-
+            $result = $this->table($table)->select()->where([$column => $id])->get(1);
+            $this->clearLoadedAttributes();
             $this->model_source = $table;
             $this->id_column = $column;
-            $this->model_id = $id;
-
-            // Relations
-            $this->loadWith($row);
-            $this->loadBelongsTo($row);
-            $this->loadHasMany($row);
-
+            if ($result === []) return;
+            $this->hydrateRow($result[0], $table, $column);
         } catch (Throwable $e) {
             throw new ModelCreationException($e);
         }
@@ -152,37 +150,37 @@ abstract class Model extends DatabaseManager
 
         $models = is_array($hasMany['model']) ? $hasMany['model'] : [$hasMany['model']];
 
+        $initialized = [];
         foreach ($models as $model) {
             $model = ltrim($model, '\\');
-            if (!class_exists($model)) continue;
-            $exp = explode("\\", $model);
-            $shortName = end($exp);
-            if (!isset($this->{$shortName}) || !is_array($this->{$shortName})) {
+            if (!is_subclass_of($model, self::class)) throw new \InvalidArgumentException('Related classes must extend Model.');
+            $shortName = $hasMany['as'] ?? (new ReflectionClass($model))->getShortName();
+            $this->ormRelationKeys[] = $shortName;
+            if (!isset($initialized[$shortName])) {
                 $this->{$shortName} = [];
+                $initialized[$shortName] = true;
             }
-
-            $rows = $this->find($hasMany['column'], $this->model_id, $this->camelToSnake($shortName));
-
-            if(isset($hasMany['as']))
-                $shortName = $hasMany['as'];
-
-            foreach ($rows as $r) {
-                $objFactory = new ObjectFactory();
-                $objFactory->setClassName($model);
-
-                if(!isset($hasMany['inConstructor'])) {
-                    $objFactory->setMethodCalls(['selectByID']);
-                    $objFactory->setMethodArgs(['selectByID' => [$r['id']]]);
+            $prototype = new $model(null);
+            $prototype->useConnectionFrom($this);
+            $table = $hasMany['table'] ?? $prototype->model_source ?? $prototype->inferTableName();
+            $key = $hasMany['key'] ?? $prototype->id_column ?? 'id';
+            $localKey = $hasMany['localKey'] ?? $this->id_column ?? 'id';
+            $localValue = $row[$localKey] ?? $this->model_id;
+            if ($localValue === null) continue;
+            $rows = $this->find($hasMany['column'], $localValue, $table);
+            foreach ($rows as $relatedRow) {
+                if (!empty($hasMany['inConstructor'])) {
+                    $related = new $model($relatedRow[$key]);
+                    $related->useConnectionFrom($this);
                 } else {
-                    $objFactory->setConstructorArgs([$r['id']]);
+                    $related = clone $prototype;
+                    $related->useConnectionFrom($this);
+                    $related->hydrateRow($relatedRow, $table, $key);
                 }
-
-                $objFactory->setType(Model::class);
-                $this->{$shortName}[] = $objFactory->create();
+                $this->{$shortName}[] = $related;
             }
         }
     }
-
 
     /**
      * Loads and initializes a related object based on the provided relation and row data.
@@ -194,28 +192,11 @@ abstract class Model extends DatabaseManager
     protected function loadRelationObject(array $relation, array $row): void
     {
         $modelClass = ltrim($relation['model'], '\\');
-        if (!class_exists($modelClass)) return;
-
-        $exp = explode("\\", $modelClass);
-        $shortName = end($exp);
-        $foreignValue = $row[$relation['column']] ?? null;
-
-        $objFactory = new ObjectFactory();
-        $objFactory->setClassName($modelClass);
-
-        if (!isset($relation['inConstructor']) || !$relation['inConstructor']) {
-            $objFactory->setMethodCalls(['selectByID']);
-            $objFactory->setMethodArgs(['selectByID' => [$foreignValue]]);
-        } else {
-            $objFactory->setConstructorArgs([$foreignValue]);
-        }
-
-        if(isset($relation['as']))
-            $shortName = $relation['as'];
-
-        $this->{$shortName} = $objFactory->create();
+        if (!is_subclass_of($modelClass, self::class)) throw new \InvalidArgumentException('Related classes must extend Model.');
+        $shortName = $relation['as'] ?? (new ReflectionClass($modelClass))->getShortName();
+        $this->ormRelationKeys[] = $shortName;
+        $this->{$shortName} = $this->createRelationObject($relation, $row);
     }
-
 
     /**
      * Creates and returns a related object based on the provided relationship definition and optional row data.
@@ -227,23 +208,16 @@ abstract class Model extends DatabaseManager
     protected function createRelationObject(array $relation, array $row = []): ?object
     {
         $modelClass = ltrim($relation['model'], '\\');
-        if (!class_exists($modelClass)) return null;
-
-        $foreignValue = $row[$relation['column']] ?? ($this->model_id ?? null);
-
-        $factory = new ObjectFactory();
-        $factory->setClassName($modelClass);
-
-        if (!isset($relation['inConstructor']) || !$relation['inConstructor']) {
-            $factory->setMethodCalls(['selectByID']);
-            $factory->setMethodArgs(['selectByID' => [$foreignValue]]);
-        } else {
-            $factory->setConstructorArgs([$foreignValue]);
+        if (!is_subclass_of($modelClass, self::class)) throw new \InvalidArgumentException('Related classes must extend Model.');
+        $foreignValue = $row[$relation['column']] ?? null;
+        if ($foreignValue === null) return null;
+        if (!empty($relation['inConstructor'])) {
+            return (new $modelClass($foreignValue))->useConnectionFrom($this);
         }
-
-        return $factory->create();
+        $related = (new $modelClass())->useConnectionFrom($this);
+        $related->selectByID($foreignValue, $relation['table'] ?? '', $relation['key'] ?? '');
+        return $related->existsInDatabase() ? $related : null;
     }
-
 
     /**
      * Retrieves all records from the specified table. If no table
@@ -256,12 +230,9 @@ abstract class Model extends DatabaseManager
      */
     final protected function selectAll(string $table = ''): array
     {
-        if ($table == '') {
-            $table = explode("\\", self::class);
-            $table = end($table);
-        }
+        $table = $table ?: ($this->model_source ?: $this->inferTableName());
 
-        return $this->table($table)->select()->where(['1' => '1'])->get();
+        return $this->table($table)->select()->get();
     }
 
     /**
@@ -274,7 +245,11 @@ abstract class Model extends DatabaseManager
      */
     final public function getParam(string $key): mixed
     {
-        return $this->{$key} ?? null;
+        if (property_exists($this, $key)) {
+            $property = new ReflectionProperty($this, $key);
+            return $property->isPublic() && $property->isInitialized($this) ? $this->{$key} : null;
+        }
+        return $this->dynamicData[$key] ?? null;
     }
 
 
@@ -300,23 +275,31 @@ abstract class Model extends DatabaseManager
     public function save(): bool
     {
 
-        $where = [$this->id_column => $this->model_id];
-
-        $update = $this->__toArray();
-
-        if ($this->checkColumn($this->model_id, "updated_on"))
-            $update[] = ["updated_on" => 'DEFAULT'];
-
-        foreach ($this->paramBlackList as $key => $value) {
-            unset($update[$value]);
-        }
-
         try {
-            return $this->table($this->model_source)->where($where)->update($update);
+            if ($this->model_id === null) throw new \LogicException('Cannot update a model without a primary key.');
+            $table = $this->model_source ?: $this->inferTableName();
+            $column = $this->id_column ?: 'id';
+            $update = $this->persistenceAttributes();
+            unset($update[$column]);
+            if ($this->checkColumn($table, 'updated_on')) {
+                $update['updated_on'] = new \database\query\SqlExpression('CURRENT_TIMESTAMP');
+            }
+            if ($update === []) return false;
+            $changes = $this->getDirty();
+            foreach ($update as $attribute => $value) {
+                if ($value === 'DEFAULT') $update[$attribute] = new \database\query\BoundValue($value);
+            }
+            $result = $this->table($table)->where([$column => $this->model_id])->update($update);
+            if ($result) {
+                $this->model_source = $table;
+                $this->id_column = $column;
+                $this->ormLastChanges = $changes;
+                $this->syncOriginal();
+            }
+            return $result;
         } catch (Throwable $e) {
             throw new ModelCRUDException($e);
         }
-
     }
 
     /**
@@ -328,16 +311,18 @@ abstract class Model extends DatabaseManager
      */
     public function saveModel(): int|null
     {
-        $save = $this->__toArray();
-        foreach ($this->paramBlackList as $key => $value) {
-            unset($save[$value]);
-        }
-
-        if($this->model_id === null && $this->model_source === null)
-            $this->model_source = $this->inferTableName();
-
         try {
-            return $this->table($this->model_source)->insert($save)->executeInsert();
+            $this->model_source ??= $this->inferTableName();
+            $this->id_column ??= 'id';
+            $save = $this->persistenceAttributes();
+            $id = $this->table($this->model_source)->insert($save)->executeInsert();
+            if ($id !== null) {
+                $this->model_id = $id;
+                $this->assignAttribute($this->id_column, $id);
+                $this->ormLastChanges = $save;
+                $this->syncOriginal();
+            }
+            return $id;
         } catch (Throwable $e) {
             throw new ModelCRUDException($e);
         }
@@ -361,7 +346,10 @@ abstract class Model extends DatabaseManager
             $this->model_source = $this->inferTableName();
 
         try {
-          return $this->table($this->model_source)->where($where)->delete();
+          if ($this->model_id === null) throw new \LogicException('Cannot delete a model without a primary key.');
+          $deleted = $this->table($this->model_source)->where($where)->delete();
+          if ($deleted) $this->model_id = null;
+          return $deleted;
         } catch (Throwable $e) {
             throw new ModelCRUDException($e);
         }
@@ -373,13 +361,10 @@ abstract class Model extends DatabaseManager
      */
     public function find(string $column, mixed $value, ?string $source = null): array
     {
-        $database = new DatabaseManager();
-
-        if ($source === null)
-            $source = $this->model_source;
+        $source ??= $this->model_source ?: $this->inferTableName();
 
         try {
-            return $database->table($source)->select()->where([$column => $value])->get();
+            return $this->table($source)->select()->where([$column => $value])->get();
         } catch (Throwable $e) {
             throw new ModelCRUDException($e);
         }
@@ -426,13 +411,163 @@ abstract class Model extends DatabaseManager
     }
 
 
+    /** Legacy trusted-data assignment. Use fill() for request input. */
     public function fromArray(array $data): void
     {
-        foreach ($data as $key => $value) {
-            $this->{$key} = $value;
-        }
+        foreach ($data as $key => $value) $this->assignAttribute((string) $key, $value);
     }
 
+    /** Only explicitly allowlisted attributes may be filled from untrusted data. */
+    public function fill(array $data): static
+    {
+        $allowed = array_flip($this->fillableAttributes());
+        foreach ($data as $key => $value) {
+            if (isset($allowed[$key]) && !in_array($key, ['model_source', 'id_column', 'tables', 'dynamicData'], true)) {
+                $this->assignAttribute((string) $key, $value);
+            }
+        }
+        return $this;
+    }
+
+    protected function fillableAttributes(): array { return []; }
+    protected function hiddenAttributes(): array { return []; }
+    protected function attributeCasts(): array { return []; }
+    /** null preserves the legacy blacklist-based persistence contract. */
+    protected function writableAttributes(): ?array { return null; }
+
+    private function assignAttribute(string $key, mixed $value): void
+    {
+        if (property_exists($this, $key)) {
+            $property = new ReflectionProperty($this, $key);
+            if (!$property->isPublic() || $property->isStatic()) {
+                throw new \InvalidArgumentException("Cannot assign internal model property: {$key}");
+            }
+        }
+        $cast = $this->attributeCasts()[$key] ?? null;
+        if ($value !== null && $cast !== null) {
+            $value = match ($cast) {
+                'int', 'integer' => (int) $value,
+                'float' => (float) $value,
+                'string' => (string) $value,
+                'bool', 'boolean' => filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+                    ?? throw new \InvalidArgumentException("Invalid boolean attribute: {$key}"),
+                'json', 'array' => is_string($value) ? json_decode($value, true, 512, JSON_THROW_ON_ERROR) : $value,
+                default => throw new \InvalidArgumentException("Unsupported attribute cast: {$cast}"),
+            };
+        }
+        unset($this->ormMissingAttributes[$key]);
+        if (property_exists($this, $key)) $this->{$key} = $value;
+        else $this->dynamicData[$key] = $value;
+    }
+
+    /** Hydrate an already fetched row without executing a constructor lookup. */
+    public function hydrateRow(array $row, ?string $table = null, ?string $key = null): static
+    {
+        $this->clearLoadedAttributes();
+        $this->fromArray($row);
+        $this->ormLoadedKeys = array_keys($row);
+        $this->model_source = $table ?? $this->model_source ?? $this->inferTableName();
+        $this->id_column = $key ?? $this->id_column ?? 'id';
+        $this->model_id = isset($row[$this->id_column]) ? (int) $row[$this->id_column] : null;
+        $identity = static::class . ':' . $this->model_source . ':' . $this->id_column . ':' . $this->model_id;
+        if (!isset(self::$ormLoading[$identity])) {
+            self::$ormLoading[$identity] = true;
+            try {
+                $this->loadWith($row);
+                $this->loadBelongsTo($row);
+                $this->loadHasMany($row);
+            } finally { unset(self::$ormLoading[$identity]); }
+        }
+        $this->syncOriginal();
+        return $this;
+    }
+
+    private function clearLoadedAttributes(): void
+    {
+        $defaults = (new ReflectionClass($this))->getDefaultProperties();
+        foreach (array_unique([...$this->ormLoadedKeys, ...array_keys($this->ormOriginal)]) as $key) {
+            if (in_array($key, ['model_source', 'id_column', 'tables', 'dynamicData'], true)) continue;
+            if (property_exists($this, $key)) {
+                $property = new ReflectionProperty($this, $key);
+                if (!$property->isPublic() || $property->isReadOnly()) continue;
+                if (array_key_exists($key, $defaults)) $this->{$key} = $defaults[$key];
+                elseif ($property->getType()?->allowsNull()) $this->{$key} = null;
+                else unset($this->{$key});
+            }
+        }
+        $this->dynamicData = [];
+        $this->model_id = null;
+        $this->ormOriginal = [];
+        foreach ($this->ormRelationKeys as $key) unset($this->{$key});
+        $this->ormRelationKeys = [];
+        $this->ormLastChanges = [];
+        $this->ormMissingAttributes = [];
+        $this->ormLoadedKeys = [];
+    }
+
+    private function persistenceAttributes(): array
+    {
+        $attributes = array_diff_key($this->__toArray(), array_flip([
+            ...$this->paramBlackList, 'tables', 'model_source', 'id_column', ...$this->ormRelationKeys,
+        ]));
+        $writable = $this->writableAttributes();
+        if ($writable !== null) $attributes = array_intersect_key($attributes, array_flip($writable));
+        foreach ($attributes as $key => $value) {
+            $cast = $this->attributeCasts()[$key] ?? null;
+            if ($value !== null && in_array($cast, ['json', 'array'], true)) {
+                $attributes[$key] = json_encode($value, JSON_THROW_ON_ERROR);
+            } elseif ($value instanceof \BackedEnum) $attributes[$key] = $value->value;
+        }
+        return $attributes;
+    }
+
+    /** Start an independent SELECT using this model's configured table and connection. */
+    public function newQuery(): static
+    {
+        $query = clone $this;
+        $query->useConnectionFrom($this);
+        $query->clearLoadedAttributes();
+        $query->table($this->model_source ?: $this->inferTableName())->select();
+        return $query;
+    }
+
+    /** Hydrated results from the current fluent query; legacy get() still returns rows. */
+    public function getModels(?int $limit = null, ?int $offset = null): array
+    {
+        $table = $this->queryTable() ?: ($this->model_source ?: $this->inferTableName());
+        $key = $this->id_column ?: 'id';
+        return array_map(function (array $row) use ($table, $key) {
+            $model = clone $this;
+            $model->useConnectionFrom($this);
+            return $model->hydrateRow($row, $table, $key);
+        }, $this->get($limit, $offset));
+    }
+
+    public function firstModel(): ?static { return $this->getModels(1)[0] ?? null; }
+    public function firstModelOrFail(): static
+    {
+        return $this->firstModel() ?? throw new \OutOfBoundsException('Model record not found.');
+    }
+
+    public function syncOriginal(): static { $this->ormOriginal = $this->persistenceAttributes(); return $this; }
+    public function getDirty(): array
+    {
+        return array_filter($this->persistenceAttributes(), fn($value, $key) =>
+            !array_key_exists($key, $this->ormOriginal) || $this->ormOriginal[$key] !== $value, ARRAY_FILTER_USE_BOTH);
+    }
+    public function isDirty(?string $attribute = null): bool
+    {
+        $dirty = $this->getDirty();
+        return $attribute === null ? $dirty !== [] : array_key_exists($attribute, $dirty);
+    }
+    public function getChanges(): array { return $this->ormLastChanges; }
+    public function existsInDatabase(): bool { return $this->model_id !== null; }
+    public function getKey(): ?int { return $this->model_id; }
+    public function toArray(): array
+    {
+        return array_diff_key($this->__toArray(), array_flip(['tables', 'model_source', 'id_column', ...$this->hiddenAttributes()]));
+    }
+    public function jsonSerialize(): array { return $this->toArray(); }
 
     /**
      * Generates a string representation of the object by creating a JSON-encoded
@@ -442,12 +577,7 @@ abstract class Model extends DatabaseManager
      */
     public function __toString(): string
     {
-        $reflect = new ReflectionClass($this);
-        $vars = $reflect->getProperties(ReflectionProperty::IS_PUBLIC);
-
-        $result = $this->__toArray();
-
-        return json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
 
@@ -465,7 +595,7 @@ abstract class Model extends DatabaseManager
         $result = [];
 
         foreach ($vars as $property) {
-            if ($property->isPublic()) {
+            if (!$property->isStatic() && $property->isInitialized($this)) {
 
                 $result[$property->getName()] = $property->getValue($this);
 
@@ -473,6 +603,7 @@ abstract class Model extends DatabaseManager
         }
 
         foreach($this->dynamicData as $key => $value) {
+            if ($value === null && isset($this->ormMissingAttributes[$key])) continue;
             $result[$key] = $value;
         }
 
@@ -489,10 +620,19 @@ abstract class Model extends DatabaseManager
      * @param string $name Name of the property to retrieve.
      * @return mixed Returns the value of the property if it exists, or null if not found.
      */
+    public function __isset(string $name): bool
+    {
+        if (property_exists($this, $name)) {
+            $property = new ReflectionProperty($this, $name);
+            return $property->isPublic() && $property->isInitialized($this) && $this->{$name} !== null;
+        }
+        return isset($this->dynamicData[$name]);
+    }
+
     public function &__get(string $name): mixed
     {
         if (property_exists($this, $name)) {
-            return $this->{$name};
+            throw new \LogicException("Model property is internal or uninitialized: {$name}");
         }
 
         if (array_key_exists($name, $this->dynamicData)) {
@@ -509,13 +649,15 @@ abstract class Model extends DatabaseManager
                 $alias = $with['as'] ?? $shortName;
 
                 if ($alias === $name) {
-                    $this->dynamicData[$name] = $this->createRelationObject($with);
+                    $this->ormRelationKeys[] = $name;
+                    $this->dynamicData[$name] = $this->createRelationObject($with, $this->__toArray());
                     return $this->dynamicData[$name];
                 }
             }
         }
 
         // Initialize null if nothing found
+        $this->ormMissingAttributes[$name] = true;
         $this->dynamicData[$name] = null;
         return $this->dynamicData[$name];
     }
@@ -532,11 +674,6 @@ abstract class Model extends DatabaseManager
      */
     public function __set(string $name, mixed $value): void
     {
-        if (property_exists($this, $name)) {
-            $this->{$name} = $value;
-            return;
-        }
-
-        $this->dynamicData[$name] = $value;
+        $this->assignAttribute($name, $value);
     }
 }

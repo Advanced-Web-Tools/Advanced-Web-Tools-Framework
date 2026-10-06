@@ -7,27 +7,33 @@ global $loader;
 use cli\CLIHandler;
 use cli\commands\ClearCommand;
 use cli\commands\HelloCommand;
+use cli\commands\InstallCommand;
 use cli\commands\PackageManagerCommand;
 use cli\commands\RoutesCommand;
 use cli\commands\VersionCommand;
 
-$handler = new CLIHandler();
+global $cliHandler;
+$cliHandler = new CLIHandler();
 
 $_SERVER['REQUEST_URI'] = '/CLI/';
 
-$handler->addCommand(new ClearCommand());
-$handler->addCommand(new VersionCommand());
-$handler->addCommand(new HelloCommand());
-$handler->addCommand(new PackageManagerCommand());
+$cliHandler->addCommand(new InstallCommand());
 
-$loader->CLIHandler = $handler;
+if (DB_TYPE !== '') {
+    $cliHandler->addCommand(new ClearCommand());
+    $cliHandler->addCommand(new VersionCommand());
+    $cliHandler->addCommand(new HelloCommand());
+    $cliHandler->addCommand(new PackageManagerCommand());
 
-$rc = new RoutesCommand();
-$rc->addRoutes($routerManager->getRoutes());
+    $loader->CLIHandler = $cliHandler;
 
-$handler->addCommand($rc);
+    $rc = new RoutesCommand();
+    $rc->addRoutes($routerManager->getRoutes());
+    $cliHandler->addCommand($rc);
+}
 $argv = $_SERVER['argv'] ?? [];
 array_shift($argv);
+$firstCommand = $argv ? ['cmd' => array_shift($argv), 'args' => $argv] : null;
 
 while (true) {
     if ($firstCommand !== null) {
@@ -36,15 +42,22 @@ while (true) {
         $firstCommand = null;
     } else {
         $input = readline("awt> ");
+        if ($input === false) break;
         if (!$input) continue;
 
-        $parts = explode(" ", $input);
+        try {
+            $parts = $cliHandler->parseInput($input);
+        } catch (\InvalidArgumentException $exception) {
+            echo $exception->getMessage() . PHP_EOL;
+            continue;
+        }
+        if ($parts === []) continue;
         $cmd = array_shift($parts);
         $args = $parts;
     }
 
     if ($cmd === 'help') {
-        $handler->help($args[0] ?? null);
+        $cliHandler->help($args[0] ?? null);
         continue;
     }
 
@@ -53,5 +66,5 @@ while (true) {
         continue;
     }
 
-    $handler->execute($cmd, $args);
+    $cliHandler->execute($cmd, $args);
 }

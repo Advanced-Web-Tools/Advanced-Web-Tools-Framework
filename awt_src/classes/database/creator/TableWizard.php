@@ -45,7 +45,7 @@ class TableWizard
 {
     /** Columns queued for the next createTable() call. */
     private array $columns = [];
-
+    private bool $headless = false;
     private ColumnSQLBuilder $sqlBuilder;
 
     /**
@@ -54,12 +54,19 @@ class TableWizard
      * @param ITableRegistry       $registry   Reads and writes the framework schema registry.
      */
     public function __construct(
-        private readonly int                  $creatorId,
+        private readonly int                  $creatorId = 0,
         private readonly ITableSchemaProvider $schema = new TableSchemaProvider(new DatabaseProvider()),
         private readonly ITableRegistry       $registry = new TableRegistry(new DatabaseManager()),
     ) {
         $this->sqlBuilder = new ColumnSQLBuilder();
     }
+
+    public function headless(): self
+    {
+        $this->headless = true;
+        return $this;
+    }
+
 
     /**
      * Convenience static constructor that wires the default concrete
@@ -67,7 +74,7 @@ class TableWizard
      *
      * @param int $creatorId The package/plugin ID for the new tables.
      */
-    public static function create(int $creatorId): self
+    public static function create(int $creatorId = 0): self
     {
         $provider = new DatabaseProvider();
         $db       = new DatabaseManager($provider, new QueryBuilder(), new DatabaseCache());
@@ -117,7 +124,7 @@ class TableWizard
      */
     public function createTable(string $tableName): bool
     {
-        if ($this->registry->tableExists($tableName)) {
+        if (!$this->headless && $this->registry->tableExists($tableName)) {
             return false;
         }
 
@@ -140,11 +147,21 @@ class TableWizard
         $result = $this->schema->executeDDL($sql);
 
         if ($result) {
-            $tableId = $this->registry->registerTable($tableName, $this->creatorId);
+
+            $tableId = null;
+
+            if(!$this->headless) {
+                $tableId = $this->registry->registerTable($tableName, $this->creatorId);
+            }
+
 
             foreach ($this->columns as $column) {
                 $def = $column->build();
-                $this->registry->registerColumn($tableId, $def->name, $def->type);
+
+                if(!$this->headless) {
+                    $this->registry->registerColumn($tableId, $def->name, $def->type);
+                }
+
 
                 // Standalone index statements are run after the table exists.
                 $indexSQL = $this->sqlBuilder->buildIndexSQL($tableName, $def);

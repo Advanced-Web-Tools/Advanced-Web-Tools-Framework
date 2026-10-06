@@ -17,7 +17,6 @@ class Package
 {
     protected ?int $id = null;                      // Unique identifier for the package.
     protected ?string $storeId = null;                 // Identifier for the store where the package is located.
-    protected ?int $installedBy = null;             // ID of the user who installed the package.
     public string $name;                             // Name of the package.
     public ?string $description = null;              // Description of the package.
     public ?string $icon = null;                     // Path to the package icon.
@@ -31,6 +30,7 @@ class Package
     public ?string $licenseUrl = null;               // URL to the license details.
     public ?string $author = null;                   // Author of the package.
     public ?string $packagePath = null;              // Path to the package files.
+    public array $dependencies = [];
     public bool $systemPackage = false;              // Indicates if the package is a system package.
     public EPackageStatus $packageStatus = EPackageStatus::Disabled; // Current status of the package.
 
@@ -77,26 +77,6 @@ class Package
     public function setStoreId(?string $storeId): void
     {
         $this->storeId = $storeId;
-    }
-
-    /**
-     * Gets the ID of the user who installed the package.
-     *
-     * @return int|null The ID of the installer or null if not set.
-     */
-    public function getInstalledBy(): ?int
-    {
-        return $this->installedBy;
-    }
-
-    /**
-     * Sets the ID of the user who installed the package.
-     *
-     * @param int|null $installedBy The installer user ID.
-     */
-    public function setInstalledBy(?int $installedBy): void
-    {
-        $this->installedBy = $installedBy;
     }
 
     /**
@@ -277,7 +257,6 @@ class Package
             "license" => $this->license,
             "licenseUrl" => $this->licenseUrl,
             "author" => $this->author,
-            "installedBy" => $this->installedBy,
             "previewImage" => $this->previewImage,
             "system" => $this->systemPackage,
             "type" => $type,

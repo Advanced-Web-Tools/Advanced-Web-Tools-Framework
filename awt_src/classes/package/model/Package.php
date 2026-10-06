@@ -13,7 +13,7 @@ class Package extends Model
 {
     // Core identification
     public string $name = "";
-    public string $author = "";
+    public ?string $author = null;
     public ?string $description = null;
     public ?string $icon = null;
     public ?string $preview_image = null;
@@ -32,7 +32,7 @@ class Package extends Model
     public ?string $license_url = null;
 
     // Dependencies
-    public array|string $dependencies = [];
+    public array|string|null $dependencies = [];
     public ?ObjectCollection $dependenciesCollection;
 
     /**
@@ -44,11 +44,11 @@ class Package extends Model
         $this->dependenciesCollection->setStrictType(Dependency::class)->setKey("name");
         $this->paramBlackList("dependenciesCollection");
 
+        parent::__construct();
+
         if ($id !== null) {
             $this->selectByID($id, "awt_package");
         }
-
-        parent::__construct();
 
     }
 
@@ -58,7 +58,7 @@ class Package extends Model
         return $this->name;
     }
 
-    public function getAuthor(): string
+    public function getAuthor(): ?string
     {
         return $this->author;
     }
@@ -115,7 +115,16 @@ class Package extends Model
 
     public function getDependencies(): ?array
     {
-        return $this->dependencies;
+        $this->dependencies ??= [];
+        if (is_string($this->dependencies)) {
+            $this->dependencies = json_decode($this->dependencies, true, 512, JSON_THROW_ON_ERROR);
+        }
+        $normalized = [];
+        foreach ($this->dependencies as $data) {
+            $dep = Dependency::fromArray($data);
+            $normalized[] = ['name' => $dep->name, 'version' => $dep->version, 'url' => $dep->url];
+        }
+        return $this->dependencies = $normalized;
     }
 
     public function getDependenciesCollection(): ?ObjectCollection
@@ -197,7 +206,9 @@ class Package extends Model
 
     public function createDependencyCollection(): void
     {
-        foreach ($this->dependencies as $dependency) {
+        $this->dependenciesCollection = new ObjectCollection();
+        $this->dependenciesCollection->setStrictType(Dependency::class)->setKey("name");
+        foreach ($this->getDependencies() as $dependency) {
             $this->dependenciesCollection->add(Dependency::fromArray($dependency));
         }
     }
@@ -218,8 +229,11 @@ class Package extends Model
      */
     public function saveModel(): int|null
     {
+        $dependencies = $this->getDependencies();
         $this->encodeDependencies();
-        return parent::saveModel();
+        $this->model_source = "awt_package";
+        try { return parent::saveModel(); }
+        finally { $this->dependencies = $dependencies; }
     }
 
     /**
@@ -228,8 +242,10 @@ class Package extends Model
      */
     public function save(): bool
     {
+        $dependencies = $this->getDependencies();
         $this->encodeDependencies();
-        return parent::save();
+        try { return parent::save(); }
+        finally { $this->dependencies = $dependencies; }
     }
 
 

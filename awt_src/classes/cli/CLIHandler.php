@@ -8,6 +8,58 @@ use cli\interfaces\CLICommand;
 
 class CLIHandler
 {
+    /** Parse interactive input without expanding variables or executing shell syntax. */
+    public function parseInput(string $input): array
+    {
+        $parts = [];
+        $value = '';
+        $quote = null;
+        $started = false;
+        $length = strlen($input);
+
+        for ($i = 0; $i < $length; ++$i) {
+            $char = $input[$i];
+            if ($char === '\\' && $quote !== "'") {
+                if ($i + 1 === $length) {
+                    throw new \InvalidArgumentException('Incomplete escape at end of command.');
+                }
+                $next = $input[$i + 1];
+                if ($quote === '"' && $next !== '"' && $next !== '\\') {
+                    $value .= $char;
+                } else {
+                    $value .= $input[++$i];
+                }
+                $started = true;
+            } elseif ($quote !== null) {
+                if ($char === $quote) {
+                    $quote = null;
+                } else {
+                    $value .= $char;
+                }
+            } elseif ($char === '"' || $char === "'") {
+                $quote = $char;
+                $started = true;
+            } elseif (ctype_space($char)) {
+                if ($started) {
+                    $parts[] = $value;
+                    $value = '';
+                    $started = false;
+                }
+            } else {
+                $value .= $char;
+                $started = true;
+            }
+        }
+
+        if ($quote !== null) {
+            throw new \InvalidArgumentException('Unclosed quote in command.');
+        }
+        if ($started) {
+            $parts[] = $value;
+        }
+        return $parts;
+    }
+
     /**
      * Stores commands in format: "command" => CLICommand
      *

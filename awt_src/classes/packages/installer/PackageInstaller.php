@@ -103,13 +103,8 @@ class PackageInstaller
                 EPackageType::System => 0,
             };
 
-            $installedBy = null;
-            if ($this->admin->checkAuthentication())
-                $installedBy = $this->admin->getParam("id");
-
             $insert = [
                 'store_id' => $this->storeId,
-                'installed_by' => $installedBy,
                 'name' => $this->package->name,
                 'description' => $this->package->description,
                 'icon' => null,
@@ -121,7 +116,8 @@ class PackageInstaller
                 'minimum_awt_version' => $this->package->getMinimumAwtVersion(),
                 'maximum_awt_version' => $this->package->getMaximumAwtVersion(),
                 'type' => $type,
-                'system_package' => $this->package->systemPackage ? 1 : 0
+                'system_package' => $this->package->systemPackage ? 1 : 0,
+                'dependencies' => json_encode($this->package->dependencies, JSON_THROW_ON_ERROR)
             ];
 
 
@@ -161,7 +157,8 @@ class PackageInstaller
                 'version' => $this->package->getVersion(),
                 'minimum_awt_version' => $this->package->getMinimumAwtVersion(),
                 'maximum_awt_version' => $this->package->getMaximumAwtVersion(),
-                'system_package' => $this->package->systemPackage ? 1 : 0
+                'system_package' => $this->package->systemPackage ? 1 : 0,
+                'dependencies' => json_encode($this->package->dependencies, JSON_THROW_ON_ERROR)
             ];
 
             $this->databaseManager->table("awt_package")->where(["id" => $this->package->getId()])->update($update);

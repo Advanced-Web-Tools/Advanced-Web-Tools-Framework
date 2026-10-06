@@ -1,23 +1,28 @@
 <?php
 namespace router;
 
-use context\events\RespondContextEvent;
 use controller\Controller;
 use event\EventDispatcher;
 use middleware\IMiddleware;
 use object\ObjectFactory;
 use redirect\Redirect;
 use response\Response;
-use router\events\RouteEnterEvent;
-use vfs\resource\event\ContextRequestEvent;
 use view\View;
+use router\execution\RouteExecutor;
+use router\http\HttpMethod;
+use router\interface\IRequest;
+use router\interface\IRequestProvider;
+use router\interface\IMethodPolicy;
+use router\http\GlobalsRequestProvider;
+use router\interface\IPathMatcher;
+use router\interface\IRouteExecutor;
+use router\matching\SegmentPathMatcher;
 
 /**
- * The Router class handles routing in the AWT,
- * matching request paths to defined routes and invoking
- * the appropriate controller actions.
+ * Route definition and fluent configuration. Matching and execution are
+ * delegated to replaceable collaborators; the existing route API is preserved.
  */
-class Router
+class Router implements \router\interface\IRoute
 {
     /**
      * @var ?string $name
@@ -65,6 +70,11 @@ class Router
      */
     public bool $service = false;
 
+    private string $method = 'GET';
+    private bool $csrf = true;
+    private readonly IPathMatcher $pathMatcher;
+    private readonly IRouteExecutor $executor;
+
     /**
      * Router constructor.
      *
@@ -73,8 +83,16 @@ class Router
      * @param ObjectFactory|Controller $controller The controller handling the action.
      * @param bool $service
      */
-    public function __construct(string $path, string $action, ObjectFactory|Controller $controller, bool $service = false)
-    {
+    public function __construct(
+        string $path,
+        string $action,
+        ObjectFactory|Controller $controller,
+        bool $service = false,
+        ?IPathMatcher $pathMatcher = null,
+        ?IRouteExecutor $executor = null,
+        private readonly IRequestProvider $requests = new GlobalsRequestProvider(),
+        private readonly IMethodPolicy $methods = new HttpMethod(),
+    ) {
         $this->path = $path;
         $this->action = $action;
         $this->controller = $controller;
@@ -83,8 +101,33 @@ class Router
         $this->middleware = null;
         $this->service = $service;
 
+        $this->pathMatcher = $pathMatcher ?? new SegmentPathMatcher();
+        $this->executor = $executor ?? new RouteExecutor(methods: $this->methods);
+    }
+
+
+    public function setMethod(string $method): self
+    {
+        $this->method = $this->methods->normalize($method);
         return $this;
     }
+
+    public function getMethod(): string
+    {
+        return $this->method;
+    }
+
+    public function withoutCsrf(): self
+    {
+        $this->csrf = false;
+        return $this;
+    }
+
+    public function requiresCsrf(): bool
+    {
+        return $this->csrf;
+    }
+
 
     /**
      * Sets the name of the route.
@@ -129,70 +172,34 @@ class Router
         return $this;
     }
 
-    /**
-     * Matches the provided request path against the route's path pattern.
-     *
-     * @param string $requestPath The path of the incoming request.
-     * @return ?array An associative array of matched parameters if successful, null otherwise.
-     */
+    public function getMiddleware(): ?IMiddleware
+    {
+        return $this->middleware;
+    }
+
+    public function getName(): ?string { return $this->name; }
+    public function getPath(): string { return $this->path; }
+    public function getAction(): string { return $this->action; }
+    public function getAlias(): ?string { return $this->alias; }
+    public function isService(): bool { return $this->service; }
+    public function getController(): ObjectFactory|Controller { return $this->controller; }
+    public function getEventDispatcher(): EventDispatcher { return $this->eventDispatcher; }
+
+    public function setController(ObjectFactory|Controller $controller): self
+    {
+        $this->controller = $controller;
+        return $this;
+    }
+
+    /** Return captured path parameters, or null when the path does not match. */
     public function match(string $requestPath): ?array
     {
-        if ($requestPath === "/") {
-            return [];
-        }
-
-        $explodedRoute = explode("/", $this->path);
-        $explodedPath = explode("/", $requestPath);
-        $matches = [];
-
-        if (count($explodedRoute) !== count($explodedPath)) {
-            return null;
-        }
-
-        foreach ($explodedRoute as $routeKey => $routeValue) {
-
-            if (str_starts_with($routeValue, "{") && str_ends_with($routeValue, "}")) {
-                $paramName = trim($routeValue, '{}');
-                $matches[$paramName] = $explodedPath[$routeKey];
-            } elseif ($routeValue !== $explodedPath[$routeKey]) {
-                return null;
-            }
-        }
-
-        return $matches;
+        return $this->pathMatcher->match($this->path, $requestPath);
     }
 
-    /**
-     * Routes the request to the appropriate controller action
-     * and dispatches the RouteEnterEvent.
-     *
-     * @param array $params Optional parameters for the controller action.
-     * @return View|Redirect The result of the controller action, either a View or Redirect instance.
-     * @throws \ReflectionException
-     */
-    public function route(array $params = []): View|Redirect|Response
+    /** Execute this route using the supplied request or the current HTTP request. */
+    public function route(array $params = [], ?IRequest $request = null): View|Redirect|Response
     {
-
-        if($this->middleware !== null) {
-            $this->middleware->handle();
-        }
-
-
-        if($this->controller instanceof ObjectFactory) {
-            $this->controller = $this->controller->create();
-        }
-
-        $context = $this->controller->getContext();
-        if($context !== null) {
-            $this->eventDispatcher->addListener('context.get', new RespondContextEvent($context));
-        }
-
-
-        $this->eventDispatcher->dispatch(new RouteEnterEvent($this->path, $this->action, $this->controller));
-
-        $this->controller->viewName = $this->action;
-
-        return $this->controller->{$this->action}($params);
+        return $this->executor->execute($this, $request ?? $this->requests->current(), $params);
     }
 }
-

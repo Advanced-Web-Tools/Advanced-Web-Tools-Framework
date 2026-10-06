@@ -18,9 +18,9 @@ class StorageRepository implements IStorageRepository
 {
     private DatabaseManager $database;
 
-    public function __construct()
+    public function __construct(?DatabaseManager $database = null)
     {
-        $this->database = new DatabaseManager();
+        $this->database = $database ?? new DatabaseManager();
     }
 
     // ----------------------------------------------------------------
@@ -31,8 +31,7 @@ class StorageRepository implements IStorageRepository
     {
         $rows = $this->database
             ->table('awt_storage')
-            ->select(['id'])
-            ->where(['1' => '1'])
+            ->select()
             ->get();
 
         return $this->hydrateCollection($rows);
@@ -40,14 +39,16 @@ class StorageRepository implements IStorageRepository
 
     public function fetchById(int $id): StorageEntry
     {
-        return new StorageEntry($id);
+        $rows = $this->database->table('awt_storage')->select()->where(['id' => $id])->get(1);
+        if ($rows === []) throw new \OutOfBoundsException("Storage entry not found: {$id}");
+        return $this->hydrateCollection($rows)[0];
     }
 
     public function fetchByOwner(int $ownerId): array
     {
         $rows = $this->database
             ->table('awt_storage')
-            ->select(['id'])
+            ->select()
             ->where(['ownerId' => $ownerId])
             ->get();
 
@@ -58,7 +59,7 @@ class StorageRepository implements IStorageRepository
     {
         $rows = $this->database
             ->table('awt_storage')
-            ->select(['id'])
+            ->select()
             ->where(['name' => $name])
             ->get();
 
@@ -69,7 +70,7 @@ class StorageRepository implements IStorageRepository
     {
         $rows = $this->database
             ->table('awt_storage')
-            ->select(['id'])
+            ->select()
             ->where(['ownerType' => $ownerType->value])
             ->get();
 
@@ -80,7 +81,7 @@ class StorageRepository implements IStorageRepository
     {
         $rows = $this->database
             ->table('awt_storage')
-            ->select(['id'])
+            ->select()
             ->where(['ownerType' => $ownerType->value, 'ownerId' => $ownerId])
             ->get();
 
@@ -91,7 +92,7 @@ class StorageRepository implements IStorageRepository
     {
         $rows = $this->database
             ->table('awt_storage')
-            ->select(['id'])
+            ->select()
             ->where(['ownerId' => $ownerId, 'name' => $name])
             ->get();
 
@@ -99,7 +100,7 @@ class StorageRepository implements IStorageRepository
             return null;
         }
 
-        return new StorageEntry($rows[0]['id']);
+        return $this->hydrateCollection($rows)[0];
     }
 
     /**
@@ -107,28 +108,49 @@ class StorageRepository implements IStorageRepository
      */
     public function create(StorageEntry $entry): StorageEntry
     {
-        var_dump($entry->getOwnerId());
-        $id = $entry->saveModel();
-        $entry->setModelId($id);
-        $entry->setUrl();
-        $entry->save();
-        return $entry;
+        $oldId = $entry->id;
+        $oldUrl = $entry->url;
+        try {
+            return $this->database->transaction(function () use ($entry, $oldUrl): StorageEntry {
+                $id = $this->database->table('awt_storage')->insert($this->data($entry))->executeInsert();
+                if ($id === null) throw new \RuntimeException('Failed to register storage entry.');
+                $entry->id = $id;
+                $entry->setUrl($oldUrl);
+                // Explicit URLs were persisted by the insert; only generated URLs need an update.
+                if ($entry->url !== $oldUrl && !$this->update($entry)) {
+                    throw new \RuntimeException('Failed to persist storage URL.');
+                }
+                $entry->setModelId($id);
+                return $entry;
+            });
+        } catch (\Throwable $e) {
+            $entry->id = $oldId;
+            $entry->url = $oldUrl;
+            if ($oldId !== null) $entry->setModelId($oldId);
+            throw $e;
+        }
     }
 
-    /**
-     * @throws ModelCRUDException
-     */
     public function update(StorageEntry $entry): bool
     {
-        return $entry->save();
+        if ($entry->id === null) throw new \LogicException('Cannot update an unregistered storage entry.');
+        return $this->database->table('awt_storage')->where(['id' => $entry->id])->update($this->data($entry));
     }
 
-    /**
-     * @throws ModelCRUDException
-     */
     public function delete(StorageEntry $entry): bool
     {
-        return $entry->deleteModel();
+        if ($entry->id === null) return false;
+        return $this->database->table('awt_storage')->where(['id' => $entry->id])->delete();
+    }
+
+    private function data(StorageEntry $entry): array
+    {
+        return [
+            'name' => $entry->name, 'path' => $entry->path, 'url' => $entry->url,
+            'size' => $entry->size, 'middleware' => $entry->middleware,
+            'lastModified' => $entry->lastModified, 'ownerId' => $entry->ownerId,
+            'ownerType' => $entry->ownerType instanceof EOwnerType ? $entry->ownerType->value : $entry->ownerType,
+        ];
     }
 
     // ----------------------------------------------------------------
@@ -136,7 +158,7 @@ class StorageRepository implements IStorageRepository
     // ----------------------------------------------------------------
 
     /**
-     * Converts a flat array of ['id' => x] rows into StorageEntry objects.
+     * Hydrates complete rows without additional database lookups.
      *
      * @param array $rows
      * @return StorageEntry[]
@@ -144,7 +166,7 @@ class StorageRepository implements IStorageRepository
     private function hydrateCollection(array $rows): array
     {
         return array_map(
-            static fn(array $row): StorageEntry => new StorageEntry($row['id']),
+            fn(array $row): StorageEntry => (new StorageEntry())->useConnectionFrom($this->database)->hydrateRow($row, 'awt_storage', 'id'),
             $rows
         );
     }

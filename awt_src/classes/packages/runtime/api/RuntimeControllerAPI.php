@@ -17,7 +17,7 @@ use packages\runtime\handler\enums\ERuntimeFlags;
  */
 abstract class RuntimeControllerAPI extends RuntimeAPI
 {
-    public array $controllers;
+    public array $controllers = [];
 
     protected Context $context;
     /**

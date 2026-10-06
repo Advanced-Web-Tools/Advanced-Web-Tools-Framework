@@ -5,208 +5,122 @@ namespace vfs\cache;
 use vfs\cache\enums\ECacheValidation;
 use vfs\transient\enums\ETransientType;
 use vfs\transient\interfaces\ITransientStorage;
-use vfs\transient\interfaces\ITransientStorageEntry;
 use vfs\transient\TransientStorage;
-use vfs\transient\TransientStorageEntry;
 
 class CachePool
 {
     public string $pool;
-
     public array $watched = [];
-
-    public ECacheValidation $cacheValidation;
-
+    public ECacheValidation $cacheValidation = ECacheValidation::NONE;
     private ITransientStorage $transientStorage;
 
     public function __construct(string $pool)
     {
         $this->pool = $pool;
-
-        $this->transientStorage = new TransientStorage();
-        $this->transientStorage
-            ->setPool("cache")
-            ->setSubPool($pool);
-
-        $this->cacheValidation = ECacheValidation::NONE;
-
-        $config = $this->transientStorage->getFile("config.json");
-
+        $this->transientStorage = (new TransientStorage())->setPool('cache')->setSubPool($pool);
+        $config = $this->transientStorage->getFile('config.json');
         if ($config !== null) {
-
             $config->loadContent();
-            $data = json_decode($config->content, true);
-
-            $this->cacheValidation = ECacheValidation::from($data["validation"]);
-            $this->watched = $data["watched"] ?? [];
+            $data = is_string($config->content) ? json_decode($config->content, true) : null;
+            if (is_array($data) && is_string($data['validation'] ?? null)) {
+                $this->cacheValidation = ECacheValidation::tryFrom($data['validation']) ?? ECacheValidation::NONE;
+                $this->watched = array_values(array_filter(is_array($data['watched'] ?? null) ? $data['watched'] : [], 'is_string'));
+            }
         }
     }
 
     public function createConfig(ECacheValidation $validation, array $watched): self
     {
-        $this->cacheValidation = $validation;
-
-        foreach ($watched as $file) {
-            $scan = $this->scanDirectory($file);
-            foreach ($scan as $entry) {
-                $watched[] = $file . DIRECTORY_SEPARATOR . $entry;
-            }
+        foreach ($watched as $path) {
+            if (!is_string($path) || $path === '') throw new \InvalidArgumentException('Watched paths must be nonempty strings.');
         }
-
-        $this->watched = $watched;
-
-        $this->transientStorage->createFile(
-            "config",
-            ETransientType::JSON,
-            json_encode([
-                "validation" => $validation->value,
-                "watched" => $watched
-            ])
-        );
-
+        $this->cacheValidation = $validation;
+        $this->watched = array_values(array_unique($watched));
+        $this->transientStorage->createFile('config', ETransientType::JSON, json_encode([
+            'validation' => $validation->value, 'watched' => $this->watched,
+        ], JSON_THROW_ON_ERROR));
         return $this;
     }
 
-    private function cacheFileName(string $name): string
-    {
-        return hash("sha256", $name);
-    }
+    private function cacheFileName(string $name): string { return hash('sha256', $name); }
 
     public function setCache(string $name, array $data): CacheEntry
     {
-        $watchedData = [];
-
-        if ($this->cacheValidation === ECacheValidation::MODIFIED) {
-
-            foreach ($this->watched as $file) {
-                if (file_exists($file)) {
-                    $watchedData[$file] = filemtime($file);
-                }
-            }
-
-        } elseif ($this->cacheValidation === ECacheValidation::HASH) {
-
-            foreach ($this->watched as $file) {
-                if (file_exists($file)) {
-                    $watchedData[$file] = hash_file("sha256", $file);
-                }
-            }
-
-        }
-
-        $payload = [
-            "time" => time(),
-            "watched" => $watchedData,
-            "data" => $data
-        ];
-
-        $file = $this->transientStorage->createFile(
-            $this->cacheFileName($name),
-            ETransientType::PHP,
-            "<?php return " . var_export($payload, true) . ";"
-        );
-
+        $payload = ['version' => 2, 'time' => time(), 'validation' => $this->cacheValidation->value,
+            'roots' => $this->watched, 'watched' => $this->snapshot($this->watched, $this->cacheValidation), 'data' => $data];
+        $file = $this->transientStorage->createFile($this->cacheFileName($name), ETransientType::PHP, $payload);
         return new CacheEntry($name, $data, $file);
     }
 
     public function getCache(string $name): bool|array
     {
-        $entry = $this->transientStorage->getFile(
-            $this->cacheFileName($name) . ".php"
-        );
-
-        if ($entry === null) {
-            return false;
+        $entry = $this->transientStorage->getFile($this->cacheFileName($name) . '.php');
+        if ($entry === null) return false;
+        try {
+            $data = @include $entry->getPath();
+            if (is_array($data) && $this->validate($data)) return $data['data'];
+        } catch (\Throwable $e) {
+            // A corrupt or obsolete cache is a miss; application data is rebuilt.
         }
-
-        $data = require $entry->path;
-
-        if (!$this->validate($entry, $data)) {
-
-            $this->transientStorage->deleteFile($entry);
-            return false;
-        }
-
-        return $data["data"];
+        $this->transientStorage->deleteFile($entry);
+        return false;
     }
 
-    public function deleteCache(string $name): bool
+    public function deleteCache(string $name, bool $missingIsSuccess = false): bool
     {
-        $entry = $this->transientStorage->getFile(
-            $this->cacheFileName($name) . ".php"
-        );
-
-        if ($entry === null) {
-            return false;
-        }
-
-        return $this->transientStorage->deleteFile($entry);
+        $entry = $this->transientStorage->getFile($this->cacheFileName($name) . '.php');
+        return $entry === null ? $missingIsSuccess : $this->transientStorage->deleteFile($entry);
     }
 
-    private function validate(ITransientStorageEntry $entry, array $data): bool
+    private function validate(array $data): bool
     {
-        return match ($this->cacheValidation) {
-
+        if (($data['version'] ?? null) !== 2 || !is_array($data['data'] ?? null)
+            || !is_int($data['time'] ?? null) || !is_string($data['validation'] ?? null)) return false;
+        $mode = ECacheValidation::tryFrom($data['validation']);
+        if ($mode === null) return false;
+        return match ($mode) {
             ECacheValidation::NONE => true,
-
-            ECacheValidation::EXPIRE =>
-                time() - $data["time"] < 3600,
-
-            ECacheValidation::EXPIRE_LONGER =>
-                time() - $data["time"] < 86400,
-
-            ECacheValidation::MODIFIED =>
-            $this->validateModified($data),
-
-            ECacheValidation::HASH =>
-            $this->validateHash($data),
+            ECacheValidation::EXPIRE => time() - $data['time'] < 3600,
+            ECacheValidation::EXPIRE_LONGER => time() - $data['time'] < 86400,
+            ECacheValidation::MODIFIED, ECacheValidation::HASH =>
+                is_array($data['roots'] ?? null) && is_array($data['watched'] ?? null)
+                && $this->snapshot($data['roots'], $mode) === $data['watched'],
         };
     }
 
-    private function validateModified(array $cacheData): bool
+    private function snapshot(array $paths, ECacheValidation $mode): array
     {
-        if (!isset($cacheData['watched'])) {
-            return false;
-        }
-
-        foreach ($cacheData['watched'] as $file => $storedMTime) {
-
-            if (!file_exists($file)) {
-                return false;
-            }
-
-            if (filemtime($file) > $storedMTime) {
-                return false;
-            }
-
-
-        }
-
-        return true;
+        if ($mode !== ECacheValidation::MODIFIED && $mode !== ECacheValidation::HASH) return [];
+        $result = [];
+        foreach ($paths as $path) $this->watch($path, $mode, $result, true);
+        ksort($result);
+        return $result;
     }
 
-    private function validateHash(array $cacheData): bool
+    private function watch(string $path, ECacheValidation $mode, array &$result, bool $root = false): void
     {
-        if (!isset($cacheData['watched'])) {
-            return false;
+        clearstatcache(true, $path);
+        if (is_link($path)) {
+            $result[$path] = ['link' => readlink($path), 'target' => realpath($path)];
+            // Do not recurse through directory links: package trees may contain cycles.
+            if (!is_file($path) && !$root) return;
         }
-
-        foreach ($cacheData['watched'] as $file => $storedHash) {
-
-            if (!file_exists($file)) {
-                return false;
+        if (is_dir($path)) {
+            $names = @scandir($path);
+            if ($names === false) throw new \RuntimeException("Cannot scan watched directory: {$path}");
+            $names = array_values(array_diff($names, ['.', '..']));
+            $result[$path] = ($result[$path] ?? []) + ['directory' => $names];
+            foreach ($names as $name) $this->watch(rtrim($path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $name, $mode, $result);
+        } elseif (is_file($path)) {
+            $stat = @stat($path);
+            if ($stat === false) throw new \RuntimeException("Cannot stat watched file: {$path}");
+            $signature = ['mtime' => $stat['mtime'], 'ctime' => $stat['ctime'], 'size' => $stat['size']];
+            if ($mode === ECacheValidation::HASH) {
+                $hash = @hash_file('sha256', $path);
+                if ($hash === false) throw new \RuntimeException("Cannot hash watched file: {$path}");
+                $signature['hash'] = $hash;
             }
-
-            if (hash_file("sha256", $file) !== $storedHash) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function scanDirectory(string $directory): array
-    {
-        return array_diff(scandir($directory), ['.', '..']);
+            $result[$path] = ($result[$path] ?? []) + $signature;
+        } else $result[$path] = ['missing' => true];
     }
 }

@@ -32,32 +32,34 @@ class PackageOwnerStorageStrategy implements IOwnerStorageStrategy
 
     public function register(StorageEntry $entry, string $ownerName): bool
     {
-        $extension   = pathinfo($entry->getPath(), PATHINFO_EXTENSION);
-        $packageDir  = $this->storageBasePath
-            . self::PACKAGES_DIR
-            . DIRECTORY_SEPARATOR
-            . $ownerName
-            . DIRECTORY_SEPARATOR;
-
-        $this->fileSystem->makeDirectory($packageDir);
-
-        $hashedName  = hash('SHA256', $entry->getName()) . '.' . $extension;
-        $destination = $packageDir . $hashedName;
-
-        $this->fileSystem->move($entry->getPath(), $destination);
-
-        $entry->setPath($destination);
-        $entry->setUrl();
-        $entry->setSize($this->fileSystem->fileSize($destination));
-        $entry->setLastModified($this->fileSystem->lastModified($destination));
-
-        if($entry->getOwnerId() === null) {
-            $db = new DatabaseManager();
-            $entry->setOwnerId($db->table('awt_package')->select(['id'])->where(['name' => $ownerName])->get()[0]['id']);
+        if ($ownerName === '' || $ownerName === '.' || $ownerName === '..' || preg_match('/[\\\\\/\x00]/', $ownerName)) {
+            throw new \InvalidArgumentException('Owner name must be a single directory name.');
         }
-
-        $created = $this->repository->create($entry);
-
-        return $created->id !== null;
+        if ($entry->getOwnerId() === null) {
+            $rows = (new DatabaseManager())->table('awt_package')->select(['id'])->where(['name' => $ownerName])->get(1);
+            if ($rows === []) throw new \OutOfBoundsException("Package not found: {$ownerName}");
+            $entry->setOwnerId($rows[0]['id']);
+        }
+        $directory = rtrim($this->storageBasePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . self::PACKAGES_DIR . DIRECTORY_SEPARATOR . $ownerName;
+        if (!$this->fileSystem->makeDirectory($directory)) throw new \RuntimeException("Could not create directory: {$directory}");
+        $oldPath = $entry->getPath();
+        $oldUrl = $entry->url;
+        $destination = \vfs\storage\FileName::unique($directory, $oldPath);
+        if (!$this->fileSystem->move($oldPath, $destination)) throw new \RuntimeException('Could not move storage file.');
+        try {
+            $entry->setPath($destination)->setSize($this->fileSystem->fileSize($destination))
+                ->setLastModified($this->fileSystem->lastModified($destination));
+            $created = $this->repository->create($entry);
+            if ($created->id === null) throw new \RuntimeException('Failed to register storage entry.');
+            return true;
+        } catch (\Throwable $e) {
+            if (!$this->fileSystem->move($destination, $oldPath)) {
+                throw new \RuntimeException("Could not restore failed registration; file remains at {$destination}.", previous: $e);
+            }
+            $entry->setPath($oldPath);
+            $entry->url = $oldUrl;
+            throw $e;
+        }
     }
 }

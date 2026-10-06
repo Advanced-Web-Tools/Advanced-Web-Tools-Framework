@@ -260,7 +260,10 @@ class BladeOne
      *                                  **1** comments are generated as html code<br>
      *                                  **2** comments are ignored (no code is generated)<br>
      */
-    public function __construct($templatePath = null, $compiledPath = null, $mode = 0, $commentMode = 0)
+    public function __construct($templatePath = null, $compiledPath = null, $mode = 0, $commentMode = 0,
+        private readonly \router\interface\ICsrfTokenManager $csrfTokens = new \router\security\Csrf(),
+        private readonly \router\interface\IRequestProvider $requests = new \router\http\GlobalsRequestProvider(),
+        private readonly \router\interface\IMethodPolicy $httpMethods = new \router\http\HttpMethod())
     {
         if ($templatePath === null) {
             $templatePath = \getcwd() . '/views';
@@ -1435,7 +1438,9 @@ class BladeOne
         if ($style === 'auto') {
             $style = 'sha1';
         }
-        $hash = $style === 'md5' ? \md5($fullPath) : \sha1($fullPath);
+        // Recompile templates that previously called the static CSRF helper.
+        $cacheKey = $fullPath . '|csrf-instance-v1';
+        $hash = $style === 'md5' ? \md5($cacheKey) : \sha1($cacheKey);
         return $this->compiledPath . '/' . basename($templateName) . '_' . $hash . $this->compileExtension;
     }
 
@@ -1573,11 +1578,11 @@ class BladeOne
         }
         // If the compiled file doesn't exist we will indicate that the view is expired
         // so that it can be re-compiled. Else, we will verify the last modification
-        // of the views is less than the modification times of the compiled views.
+        // of the views or compiler is newer than the compiled views.
         if (!$this->compiledPath || !\is_file($compiled)) {
             return true;
         }
-        return \filemtime($compiled) < \filemtime($template);
+        return \filemtime($compiled) < max(\filemtime($template), \filemtime(__FILE__));
     }
 
     /**
@@ -1694,29 +1699,14 @@ class BladeOne
      */
     public function getCsrfToken($fullToken = false, $tokenId = '_token'): string
     {
-        if ($this->csrf_token == '') {
-            $this->regenerateToken($tokenId);
-        }
-        if ($fullToken) {
-            return $this->csrf_token . '|' . $this->ipClient();
-        }
-        return $this->csrf_token;
+        $this->csrf_token = $this->csrfTokens->token($tokenId);
+        return $fullToken ? $this->csrf_token . '|' . $this->ipClient() : $this->csrf_token;
     }
 
-    /**
-     * Regenerates the csrf token and stores in the session.
-     * It requires an open session.
-     *
-     * @param string $tokenId [optional] Name of the token.
-     */
+    /** Regenerate the shared session token explicitly (invalidates existing forms). */
     public function regenerateToken($tokenId = '_token'): void
     {
-        try {
-            $this->csrf_token = \bin2hex(\random_bytes(10));
-        } catch (\Throwable $e) {
-            $this->csrf_token = '123456789012345678901234567890'; // unable to generates a random token.
-        }
-        @$_SESSION[$tokenId] = $this->csrf_token . '|' . $this->ipClient();
+        $this->csrf_token = $this->csrfTokens->regenerate($tokenId);
     }
 
     public function ipClient()
@@ -1730,29 +1720,18 @@ class BladeOne
         return $_SERVER['REMOTE_ADDR'] ?? '';
     }
 
-    /**
-     * Validates if the csrf token is valid or not.<br>
-     * It requires an open session.
-     *
-     * @param bool   $alwaysRegenerate [optional] Default is false.<br>
-     *                                 If **true** then it will generate a new token regardless
-     *                                 of the method.<br>
-     *                                 If **false**, then it will generate only if the method is POST.<br>
-     *                                 Note: You must not use true if you want to use csrf with AJAX.
-     *
-     * @param string $tokenId          [optional] Name of the token.
-     *
-     * @return bool It returns true if the token is valid, or it is generated. Otherwise, false.
-     */
+    /** Validate unsafe requests before optionally rotating the shared token. */
     public function csrfIsValid($alwaysRegenerate = false, $tokenId = '_token'): bool
     {
-        if (@$_SERVER['REQUEST_METHOD'] === 'POST' && $alwaysRegenerate === false) {
-            $this->csrf_token = $_POST[$tokenId] ?? null; // ping pong the token.
-            return $this->csrf_token . '|' . $this->ipClient() === ($_SESSION[$tokenId] ?? null);
+        $request = $this->requests->current();
+        if (!$this->httpMethods->isSafe($request->method())
+            && !$this->csrfTokens->validateToken($request->csrfToken($tokenId), $tokenId)) {
+            return false;
         }
-        if ($this->csrf_token == '' || $alwaysRegenerate) {
-            // if not token then we generate a new one
+        if ($alwaysRegenerate) {
             $this->regenerateToken($tokenId);
+        } else {
+            $this->getCsrfToken(false, $tokenId);
         }
         return true;
     }
@@ -2807,8 +2786,8 @@ class BladeOne
 
     protected function compilecsrf($expression = null): string
     {
-        $expression = $expression ?? "'_token'";
-        return "<input type='hidden' name='$this->phpTag echo $expression; ?>' value='{$this->phpTag}echo \$this->csrf_token; " . "?>'/>";
+        $expression = empty($expression) ? "'_token'" : $this->stripParentheses($expression);
+        return "<input type='hidden' name='<?= htmlspecialchars($expression, ENT_QUOTES, 'UTF-8') ?>' value='<?= htmlspecialchars(\$this->getCsrfToken(false, $expression), ENT_QUOTES, 'UTF-8') ?>'/>";
     }
 
     protected function compileDd($expression): string
@@ -4307,12 +4286,26 @@ class BladeOne
 
     protected function compileResource($expression): string
     {
-        $expression = str_replace("('", "", $expression);
-        $expression = str_replace("')", "", $expression);
+        return $this->phpTagEcho . '$this->resourceUrl' . $expression . '; ?>';
+    }
 
-        $path = HOSTNAME . "/awt_src/vendor/$expression";
+    /** Resolve a Resource alias at render time using this template's package context. */
+    public function resourceUrl(string $alias, bool $must = false): string
+    {
+        $context = $this->packageName;
+        if (str_contains($alias, ':')) $context = explode(':', $alias, 2)[0];
+        $resource = new \vfs\resource\Resource($context);
+        $path = $resource->get($alias, $must);
+        if ($path === null) return '';
 
-        return $this->phpTagEcho . "'$path'; ?>";
+        $root = rtrim(PACKAGES, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($path, $root)) {
+            throw new \vfs\resource\exceptions\ResourceException('Resource is outside the package root.');
+        }
+        $relative = substr($path, strlen($root));
+        $segments = explode(DIRECTORY_SEPARATOR, $relative);
+        $url = rtrim(HOSTNAME, '/') . '/awt_packages/' . implode('/', array_map('rawurlencode', $segments));
+        return self::e($url);
     }
 
     protected function compileUrl($expression): string {

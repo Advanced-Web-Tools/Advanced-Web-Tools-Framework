@@ -1,57 +1,60 @@
 <?php
+
 namespace router\manager;
 
 use event\EventDispatcher;
 use redirect\Redirect;
 use response\Response;
-use router\Router;
+use router\http\GlobalsRequestProvider;
+use router\interface\IRequest;
+use router\interface\IRequestProvider;
+use router\interface\IRoute;
+use router\interface\IRouterManager;
+use router\interface\IRouteResolver;
+use router\interface\IRouteResponseFactory;
+use router\matching\RouteResolver;
+use router\response\RouteResponseFactory;
 use view\View;
 
-/**
- * The RouterManager class manages a collection of routers,
- * handling the addition, retrieval, and routing of requests
- * to the appropriate route based on the current request path.
- */
-final class RouterManager
+/** Registers route contracts and coordinates replaceable resolution and responses. */
+final class RouterManager implements IRouterManager
 {
+    /** @var array<string, IRoute> */
     private array $routesName = [];
-    private array $routesPath = [];
-    private string $currentPath;
-
-    /**
-     * @var EventDispatcher $eventDispatcher
-     * The event dispatcher for handling events related to routing.
-     */
     public EventDispatcher $eventDispatcher;
 
-    public function __construct()
-    {
-        $this->currentPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    public function __construct(
+        private readonly IRequestProvider $requests = new GlobalsRequestProvider(),
+        private readonly IRouteResolver $resolver = new RouteResolver(),
+        private readonly IRouteResponseFactory $responses = new RouteResponseFactory(),
+        ?EventDispatcher $eventDispatcher = null,
+    ) {
+        $this->eventDispatcher = $eventDispatcher ?? new EventDispatcher();
     }
 
-    /**
-     * Adds a Router instance to the manager.
-     * If the router does not have a name, it assigns one based on the count of existing routes.
-     *
-     * @param Router $route The Router instance to add.
-     */
-    public function addRouter(Router $route): void
+    public function addEventDispatcher(EventDispatcher $eventDispatcher): self
     {
-        if ($route->name === null || trim($route->name) === '') {
-            $route->name = count($this->routesName);
+        $this->eventDispatcher = $eventDispatcher;
+        foreach ($this->routesName as $route) {
+            $route->addEventDispatcher($eventDispatcher);
         }
-
-        $route->eventDispatcher = $this->eventDispatcher;
-
-        $this->routesName[$route->name] = $route;
-        $this->routesPath[$route->path] = $route;
+        return $this;
     }
 
-    /**
-     * Loads multiple Router instances into the manager.
-     *
-     * @param array $routers An array of Router instances to load.
-     */
+    public function addRouter(IRoute $router): void
+    {
+        $name = $router->getName();
+        if ($name === null || trim($name) === '') {
+            $index = count($this->routesName);
+            while (isset($this->routesName[(string) $index])) {
+                $index++;
+            }
+            $router->setName((string) $index);
+        }
+        $router->addEventDispatcher($this->eventDispatcher);
+        $this->routesName[$router->getName()] = $router;
+    }
+
     public function loadRouters(array $routers): void
     {
         foreach ($routers as $router) {
@@ -59,76 +62,33 @@ final class RouterManager
         }
     }
 
-    /**
-     * Retrieves all routes managed by the RouterManager.
-     *
-     * @return array An associative array of routes indexed by their names.
-     */
-    public function getRoutes(): array
-    {
-        return $this->routesName;
-    }
+    public function getRoutes(): array { return $this->routesName; }
+    public function getRouters(): array { return $this->getRoutes(); }
 
-    /**
-     * Retrieves a specific route by its name.
-     *
-     * @param string $name The name of the route to retrieve.
-     * @return ?Router The Router instance if found, null otherwise.
-     */
-    public function getRouteByName(string $name): ?Router
+    public function getRouteByName(string $name): ?IRoute
     {
         return $this->routesName[$name] ?? null;
     }
 
-    /**
-     * Retrieves a specific route by its path.
-     *
-     * @param string $path The path of the route to retrieve.
-     * @return ?Router The Router instance if found, null otherwise.
-     */
-    public function getRouteByPath(string $path): ?Router
+    public function getRouteByPath(string $path, string $method = 'GET'): ?IRoute
     {
-        return $this->routesPath[$path] ?? null;
-    }
-
-    /**
-     * Starts the routing process, matching the current path against the defined routes.
-     * If a matching route is found, it invokes the corresponding action.
-     *
-     * @return View|Redirect The result of the route action, either a View or Redirect instance.
-     */
-    public function startRouter(): View|Redirect|Response
-    {
-
-        if($this->currentPath === '/')
-        {
-            if(!isset($this->routesPath['/'])) {
-                $this->handleNotFound();
-                exit();
-            } else {
-                $this->routesPath['/']->route([]);
+        foreach ($this->routesName as $route) {
+            if ($route->getPath() === $path && $route->getMethod() === strtoupper($method)) {
+                return $route;
             }
         }
-
-        foreach ($this->routesPath as $route) {
-            $params = $route->match($this->currentPath);
-
-            if ($params !== null) {
-                return $route->route($params);
-            }
-        }
-
-        $this->handleNotFound();
-        exit();
+        return null;
     }
 
-    /**
-     * Handles 404 Not Found responses when no routes match the current path.
-     */
-    private function handleNotFound(): void
+    public function startRouter(?IRequest $request = null): View|Redirect|Response
     {
-        http_response_code(404);
-        echo "404 Not Found";
+        $request ??= $this->requests->current();
+        $match = $this->resolver->resolve($this->routesName, $request);
+        if ($match->route !== null) {
+            return $match->route->route($match->params, $request);
+        }
+        return $match->allowed !== []
+            ? $this->responses->methodNotAllowed($match->allowed)
+            : $this->responses->notFound();
     }
 }
-

@@ -112,6 +112,8 @@ class PackageManager
             $package->setId($packageData['id']);
             $package->setStoreID($packageData['store_id']);
             $package->name = $packageData['name'];
+            $dependencies = $packageData['dependencies'] ?? [];
+            $package->dependencies = is_string($dependencies) ? json_decode($dependencies, true, 512, JSON_THROW_ON_ERROR) : $dependencies;
             $package->description = $packageData['description'];
             $package->icon = $packageData['icon'];
             $package->previewImage = $packageData['preview_image'];
@@ -122,7 +124,6 @@ class PackageManager
             $package->setMinimumAwtVersion($packageData['minimum_awt_version']);
             $package->setMaximumAwtVersion($packageData['maximum_awt_version']);
             $package->setInstallationDate($packageData['installation_date']);
-            $package->installedByUsername = $packageData['installed_by'] == null ? 'AWT' : $packageData['installed_by'];
 
             switch ($packageData['type']) {
                 case 1:
@@ -137,7 +138,7 @@ class PackageManager
                 $package->systemPackage = true;
             }
 
-            if ($packageData['status'] === 1) {
+            if ((int) $packageData['status'] === 1) {
                 $package->packageStatus = EPackageStatus::Active;
             }
 

@@ -3,183 +3,94 @@
 namespace vfs\resource;
 
 use vfs\resource\event\ContextRequestEvent;
+use vfs\resource\exceptions\ResourceException;
 
 class Resource
 {
     public string $context;
-    private array $map;
+    private array $map = [];
     private string $path;
 
-    public function __construct(string $context = "", string $path = PACKAGES)
+    public function __construct(string $context = '', string $path = PACKAGES)
     {
-        global $eventDispatcher;
-
-        if(empty($context)) {
-            $contextEvent = new ContextRequestEvent();
-            $eventDispatcher->dispatch($contextEvent);
-            $this->context = $contextEvent->context;
-        } else {
-            $this->context = $context;
+        if ($context === '') {
+            global $eventDispatcher;
+            if (!isset($eventDispatcher)) throw new ResourceException('No resource context dispatcher is available.');
+            $event = new ContextRequestEvent();
+            $eventDispatcher->dispatch($event);
+            $context = $event->context ?? '';
+            if ($context === '') throw new ResourceException('No resource context was supplied.');
         }
-
-        $this->path = $path;
-        $this->map = [];
+        $this->context = $context;
+        $this->path = rtrim($path, DIRECTORY_SEPARATOR);
     }
 
     public function buildResourceMap(): self
     {
-        $start = ResourceBuilder::directoryIterator($this->path);
-
-        foreach($start as $resource) {
-            if(is_dir($this->path . DIRECTORY_SEPARATOR . $resource)) {
-                $builder = new ResourceBuilder($this->path . DIRECTORY_SEPARATOR . $resource);
-                $map[$resource] = $builder->build();
-                $this->map = array_merge($this->map, $map);
-                ResourceCache::cache($resource, [$this->path . DIRECTORY_SEPARATOR . $resource], $map);
-            }
+        $this->map = [];
+        foreach (ResourceBuilder::directoryIterator($this->path) as $package) {
+            $directory = $this->path . DIRECTORY_SEPARATOR . $package;
+            if (!is_dir($directory)) continue;
+            $map = [$package => (new ResourceBuilder($directory))->build()];
+            $this->map[$package] = $map[$package];
+            ResourceCache::cache($package, [$directory], $map, $this->path);
         }
-
         return $this;
     }
 
-    public function getResourceMap(): array
-    {
-        return $this->map;
-    }
+    public function getResourceMap(): array { return $this->map; }
 
-    /**
-     * Get a resource by its alias.
-     *
-     * Example of alias:
-     *
-     * <filename.ext>
-     *
-     * <folder>/<filename.ext>
-     *     or
-     * <PackageName>:<filename.ext>
-     *     or
-     * <PackageName>:<folder>/<filename.ext>
-     * @param string $alias
-     * @param bool $must
-     * @return string|null
-     */
+    /** Resolve filename, relative/path, or Package:relative/path. Required resources throw when missing. */
     public function get(string $alias, bool $must = false): ?string
     {
-        $alias = $this->parseAlias($alias);
-
-        $hasPackage = false;
-        $hasPath = false;
-        $hasFile = false;
-
-        if(!empty($alias['package']))
-            $hasPackage = true;
-
-        if(!empty($alias['path']))
-            $hasPath = true;
-
-        if(!empty($alias['file']))
-            $hasFile = true;
-
-
-        if($hasPackage) {
-            $res = ResourceCache::get($alias['package']);
-            !is_array($res) ? $this->buildResourceMap() : $this->map = $res;
-        } else {
-            $res = ResourceCache::get($this->context);
-            !is_array($res) ? $this->buildResourceMap() : $this->map = $res;
-        }
-
-        if(empty($this->map))
-            return null;
-
-        if ($hasPackage && $hasPath && $hasFile) {
-            $node = $this->map[$alias['package']] ?? null;
-
-            foreach (explode('/', $alias['path']) as $segment) {
-                if (!is_array($node) || !isset($node[$segment])) return null;
-                $node = $node[$segment];
-            }
-
-            return $node[$alias['file']] ?? null;
-        }
-
-        if ($hasPackage && $hasFile && !$hasPath) {
-            $map = $this->map[$alias['package']] ?? [];
-
-            // Direct file at package root (e.g. PackageName:main.php)
-            if (isset($map[$alias['file']]) && is_string($map[$alias['file']])) {
-                return $map[$alias['file']];
-            }
-
-            // File inside a subdirectory (e.g. PackageName:PackageNameController.php)
-            foreach ($map as $dir => $entries) {
-                if (is_array($entries) && isset($entries[$alias['file']])) {
-                    return $entries[$alias['file']];
+        $parts = $this->parseAlias($alias);
+        $found = null;
+        if ($parts !== null) {
+            [$package, $relative] = $parts;
+            $cached = ResourceCache::get($package, $this->path);
+            if (is_array($cached)) $this->map = $cached;
+            else $this->buildResourceMap();
+            $map = $this->map[$package] ?? [];
+            if (!str_contains($relative, '/')) $found = $this->findInArray($map, $relative);
+            else {
+                $node = $map;
+                foreach (explode('/', $relative) as $segment) {
+                    if (!is_array($node) || !array_key_exists($segment, $node)) { $node = null; break; }
+                    $node = $node[$segment];
                 }
+                if (is_string($node)) $found = $node;
             }
+            if ($found !== null && !is_file($found)) $found = null;
         }
-
-        if ($hasPath && $hasFile && !$hasPackage) {
-            $node = $this->map[$this->context] ?? null;
-
-            foreach (explode('/', $alias['path']) as $segment) {
-                if (!is_array($node) || !isset($node[$segment])) return null;
-                $node = $node[$segment];
-            }
-
-            return $node[$alias['file']] ?? null;
-        }
-
-        if($hasFile && !$hasPackage && !$hasPath) {
-            $map = $this->map[$this->context] ?? null;
-            foreach($map as $key => $files) {
-                if($key === $alias['file'])
-                    return $files;
-
-                if(is_array($files)) {
-                     $res = $this->findInArray($files, $alias['file']);
-                    if($res !== null)
-                        return $res;
-                }
-            }
-        }
-
-        return null;
+        if ($found === null && $must) throw new ResourceException("Resource not found: {$alias}");
+        return $found;
     }
 
-
-    private function findInArray(array $array, $value): ?string
+    private function findInArray(array $array, string $name): ?string
     {
-        foreach ($array as $key => $item) {
-            if ($key === $value) {
-                return $item;
-            }
-
-            if(is_array($item)) {
-                $res = $this->findInArray($item, $value);
-                if($res !== null)
-                    return $res;
+        if (isset($array[$name]) && is_string($array[$name])) return $array[$name];
+        foreach ($array as $item) {
+            if (is_array($item)) {
+                $found = $this->findInArray($item, $name);
+                if ($found !== null) return $found;
             }
         }
-
         return null;
     }
 
     private function parseAlias(string $alias): ?array
     {
-        // Normalize: strip leading slash after package colon (e.g. "Test:/main.php" → "Test:main.php")
-        $alias = preg_replace('/^([^:]+):\//', '$1:', $alias);
-
-        $pattern = '/^(?:(?<package>[^:]+):)?(?:(?<path>.+)\/)?(?<file>[^\/]+)$/';
-
-        if (!preg_match($pattern, $alias, $matches)) {
-            return null;
+        $package = $this->context;
+        if (str_contains($alias, ':')) {
+            [$package, $alias] = explode(':', $alias, 2);
+            $alias = ltrim($alias, '/');
         }
-
-        return [
-            'package' => !empty($matches['package']) ? $matches['package'] : null,
-            'path'    => !empty($matches['path'])    ? $matches['path']    : null,
-            'file'    => $matches['file'],
-        ];
+        if ($package === '' || str_contains($package, '/') || str_contains($package, '\\')
+            || $package === '.' || $package === '..' || str_contains($package, "\0")) return null;
+        if ($alias === '' || str_contains($alias, '\\') || str_contains($alias, "\0")) return null;
+        foreach (explode('/', $alias) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') return null;
+        }
+        return [$package, $alias];
     }
 }

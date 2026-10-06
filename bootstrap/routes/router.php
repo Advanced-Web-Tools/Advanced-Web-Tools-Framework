@@ -7,7 +7,7 @@ global $defaultRouters;
 global $routerManager;
 global $eventDispatcher;
 
-$routerManager->eventDispatcher = $eventDispatcher;
+$routerManager->addEventDispatcher($eventDispatcher);
 
 foreach ($loader->routers as $router) {
     $routerManager->loadRouters($router->getRouters());
@@ -20,7 +20,13 @@ foreach ($defaultRouters as $route) {
 if (PHP_SAPI === 'cli')
     return $routerManager;
 
-$page = $routerManager->startRouter();
+// HEAD runs the normal route pipeline and sends headers, but never a body.
+$request = (new \router\http\GlobalsRequestProvider())->current();
+if ($request->method() === 'HEAD') {
+    ob_start(static fn(string $body): string => '');
+}
+
+$page = $routerManager->startRouter($request);
 
 try {
     if ($page instanceof Redirect) {

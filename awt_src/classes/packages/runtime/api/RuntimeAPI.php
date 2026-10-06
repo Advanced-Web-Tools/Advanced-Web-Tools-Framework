@@ -118,27 +118,7 @@ abstract class RuntimeAPI extends Runtime implements IRuntime
      */
     final protected function getLocalObject(string $pathFromRoot): ?object
     {
-        $loadedClasses = get_declared_classes();
-
-        require_once $this->runtimePath . $pathFromRoot;
-
-        $newClasses = get_declared_classes();
-
-        $newClasses = array_diff($newClasses, $loadedClasses);
-
-        foreach ($newClasses as $class) {
-            try {
-                $reflection = new ReflectionClass($class);
-            } catch (ReflectionException $e) {
-                break;
-            }
-
-            if (!$reflection->isAbstract()) {
-                return new $class();
-            }
-        }
-
-        return null;
+        return \object\ObjectHandler::createObjectFromFile($this->runtimePath . $pathFromRoot);
     }
 
     /**
@@ -149,6 +129,11 @@ abstract class RuntimeAPI extends Runtime implements IRuntime
     final protected function waitForRuntime(string $name): void
     {
         $this->waitList[] = $name;
+    }
+
+    final protected function waitForPackage(string $name): void
+    {
+        $this->waitForRuntime($name);
     }
 
     final protected function addShared(string $name, object $instance): void

@@ -5,13 +5,19 @@ namespace router\events;
 use event\interfaces\IEvent;
 use event\interfaces\IEventListener;
 use router\manager\RouterManager;
+use router\interface\IRouterManager;
 
 final class EDynamicRouteListener implements IEventListener
 {
 
-    private RouterManager $routerManager;
+    private IRouterManager $routerManager;
 
-    public function addManager(?RouterManager $routerManager): void
+    public function __construct(?IRouterManager $routerManager = null)
+    {
+        $this->addManager($routerManager);
+    }
+
+    public function addManager(?IRouterManager $routerManager): void
     {
         if($routerManager === null) {
             $this->routerManager = new RouterManager();

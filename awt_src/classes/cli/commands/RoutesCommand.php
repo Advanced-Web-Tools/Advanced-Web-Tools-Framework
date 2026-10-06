@@ -64,15 +64,15 @@ class RoutesCommand implements CLICommand
             foreach ($route as $finalRoute) {
 
                 $lazyLoaded = false;
-                if($finalRoute->controller instanceof ObjectFactory)
+                if($finalRoute->getController() instanceof ObjectFactory)
                     $lazyLoaded = true;
 
                 $this->lastResult .= sprintf(
                     "%s%-{$colWidths['name']}s%s %s%-{$colWidths['path']}s%s %s%-{$colWidths['action']}s%s %s%-{$colWidths['controller']}s%s %s%-{$colWidths['lazy']}s%s\n",
-                    $colors['name'], $finalRoute->name, $colors['reset'],
-                    $colors['path'], $finalRoute->path, $colors['reset'],
-                    $colors['action'], $finalRoute->action, $colors['reset'],
-                    $colors['controller'], $finalRoute->controller->controllerName ?? "Unknown Controller", $colors['reset'],
+                    $colors['name'], $finalRoute->getName(), $colors['reset'],
+                    $colors['path'], $finalRoute->getPath(), $colors['reset'],
+                    $colors['action'], $finalRoute->getAction(), $colors['reset'],
+                    $colors['controller'], $finalRoute->getController()->controllerName ?? "Unknown Controller", $colors['reset'],
                     $colors['lazy'], $lazyLoaded ? 'Yes' : 'No', $colors['reset']
                 );
             }
