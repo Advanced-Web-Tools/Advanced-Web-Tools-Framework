@@ -36,7 +36,7 @@ abstract class RuntimeAPI implements IRuntimeAPI, IRuntimeBaseCapabilities
     public function environmentSetup(): void {}
     public function setup(): void {}
     abstract public function main(): void;
-    public function setRuntimeFlag(ERuntimeFlags|\packages\runtime\handler\enums\ERuntimeFlags $flag): void { $this->runtime->setFlags([...$this->runtime->getFlags(), $flag]); }
+    public function setRuntimeFlag(ERuntimeFlags $flag): void { $this->runtime->setFlags([...$this->runtime->getFlags(), $flag]); }
     public function waitForPackage(string $package): void { $this->runtime->setWaitFor([...$this->runtime->getWaitFor(), $package]); }
     public function waitForRuntime(string $package): void { $this->waitForPackage($package); }
     public function setShared(string $name, mixed $share): void
@@ -49,14 +49,27 @@ abstract class RuntimeAPI implements IRuntimeAPI, IRuntimeBaseCapabilities
     {
         $value = $this->runtime->getSharedRegistry()[$name][$shared] ?? null;
         if ($value !== null && $expectedType !== null && !$value instanceof $expectedType) {
-            throw new \RuntimeException('Unexpected shared type ' . get_debug_type($value) . "; expected {$expectedType}.");
+            throw new \runtime\exceptions\RuntimeException('Unexpected shared type ' . get_debug_type($value) . "; expected {$expectedType}.");
         }
         return $value;
     }
-    public function getPassable(string $className): ?object
+    public function hasFlags(bool $hasFlags = false): bool { return $this->runtime->getFlags() !== []; }
+    public function addShared(string $name, object $instance): void { $this->setShared($name, $instance); }
+    public function setSharable(array $shared): void { $this->runtime->setSharedRegistry($shared); }
+
+    /** One argument looks within this package; two arguments select another package. */
+    public function getPassable(string $runtimeName, ?string $className = null, ?string $type = null): ?object
     {
-        return $this->runtime->getPassable($this->name)[$className] ?? null;
+        $instance = $className === null
+            ? ($this->runtime->getPassable($this->name)[$runtimeName] ?? null)
+            : ($this->runtime->getPassable($runtimeName)[$className] ?? null);
+        return $instance !== null && ($type === null || $instance instanceof $type) ? $instance : null;
     }
+
+    public function getPackage(): InstalledPackage { return $this->package; }
+    public function getId(): int { return $this->id; }
+    public function getName(): string { return $this->name; }
+    public function getInfo(): array { return $this->package->getInfo(); }
     public function getLocalObject(string $pathFromRoot): ?object
     {
         return ObjectHandler::createObjectFromFile($this->rootPath . '/' . ltrim($pathFromRoot, '/'));

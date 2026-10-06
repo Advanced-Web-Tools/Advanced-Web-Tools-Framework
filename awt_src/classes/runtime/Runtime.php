@@ -20,7 +20,7 @@ class Runtime implements IRuntime
     public function __construct(private readonly ?InstalledPackage $package = null)
     {
         if ($package !== null) {
-            $this->rootPath = PACKAGES . str_replace(' ', '', $package->getName()) . DIRECTORY_SEPARATOR;
+            $this->rootPath = $package->getPackagePath() . DIRECTORY_SEPARATOR;
         }
     }
 

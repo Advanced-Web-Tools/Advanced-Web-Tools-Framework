@@ -19,17 +19,21 @@ class Extractor implements IExtractor
 
     /**
      * @inheritDoc
-     * @throws \packages\exceptions\RuntimeException
+     * @throws \RuntimeException
      */
     public function extract(): void
     {
         $this->destination .= hash("md5", $this->target->getName());
         $this->makeDestination();
 
-        $this->zip->open($this->target->getPath());
-        $this->zipVerify();
-
-        $this->zip->extractTo($this->destination);
+        $result = $this->zip->open($this->target->getPath());
+        if ($result !== true) throw new RuntimeException("Could not open package archive (ZIP error {$result}).");
+        try {
+            $this->zipVerify();
+            if (!$this->zip->extractTo($this->destination)) throw new RuntimeException('Could not extract package archive.');
+        } finally {
+            $this->zip->close();
+        }
     }
 
     /**

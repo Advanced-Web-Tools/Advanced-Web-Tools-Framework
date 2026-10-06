@@ -1,6 +1,6 @@
 <?php
 
-namespace installer\interfaces\package\actions;
+namespace uninstaller\interfaces\actions;
 
 interface IUninstall
 {

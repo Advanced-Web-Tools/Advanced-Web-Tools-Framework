@@ -17,5 +17,11 @@ interface IPackageService
 
     public function getInstalled(): array;
 
+    public function getPackageById(int $id): ?InstalledPackage;
+
+    public function enablePackage(int $id): void;
+
+    public function disablePackage(int $id): void;
+
     public function getPackage(string $name): ?InstalledPackage;
 }

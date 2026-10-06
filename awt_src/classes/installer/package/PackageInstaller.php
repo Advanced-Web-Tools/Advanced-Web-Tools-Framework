@@ -27,12 +27,23 @@ readonly class PackageInstaller implements IPackageInstaller
      * @throws ManifestReaderException
      * @throws \JsonException
      */
-    public function install(): bool
+    public function install(): bool { return $this->apply(false); }
+    public function update(): bool { return $this->apply(true); }
+
+    private function apply(bool $updating): bool
     {
-        global $eventDispatcher;
         $this->extractor->extract();
         $extractedBase = $this->extractor->getDestination();
+        try {
+            return $this->applyExtracted($extractedBase, $updating);
+        } finally {
+            $this->cleanup($extractedBase);
+        }
+    }
 
+    private function applyExtracted(string $extractedBase, bool $updating): bool
+    {
+        global $eventDispatcher;
         $packageDir = is_file($extractedBase . DIRECTORY_SEPARATOR . 'manifest.json')
             ? $extractedBase : $this->findPackageDir($extractedBase);
 
@@ -43,7 +54,11 @@ readonly class PackageInstaller implements IPackageInstaller
             || (!empty($manifest['maximum_awt_version']) && version_compare(AWT_VERSION, $manifest['maximum_awt_version'], '>')))) {
             throw new RuntimeException('Package is incompatible with this AWT version.');
         }
-        if ($this->packageRepository->getPackage($manifest['name']) !== null) {
+        $installedPackage = $this->packageRepository->getPackage($manifest['name']);
+        if ($updating && $installedPackage === null) {
+            throw new RuntimeException("Package is not installed: {$manifest['name']}.");
+        }
+        if (!$updating && $installedPackage !== null) {
             throw new RuntimeException("Package is already installed: {$manifest['name']}. Use the update workflow.");
         }
         foreach ($manifest['dependencies'] as $data) {
@@ -52,10 +67,6 @@ readonly class PackageInstaller implements IPackageInstaller
             if ($installed === null || !\package\dependency\Dependency::matchesVersion($installed['version'], $dependency->version)) {
                 throw new RuntimeException("Required dependency is missing or incompatible: {$dependency->name} {$dependency->version}");
             }
-        }
-
-        if ($manifest === null) {
-            return false;
         }
 
         $verifyManifest  = new VerifyManifest($manifest);
@@ -80,7 +91,16 @@ readonly class PackageInstaller implements IPackageInstaller
         $manifestReader = new ManifestReader($packageName);
         $forDb = $manifestReader->getManifest();
         // Dependencies are persisted; startup never needs to reread the manifest.
-        $packageId      = $this->packageRepository->newPackage($forDb);
+        if ($updating) {
+            $packageId = (int) $installedPackage['id'];
+            // Optional metadata omitted from an update keeps its installed value.
+            $forDb = array_merge($installedPackage, $forDb);
+            if (!$this->packageRepository->updatePackage($packageId, $forDb)) {
+                throw new RuntimeException("Failed to update package '{$packageName}'.");
+            }
+        } else {
+            $packageId = $this->packageRepository->newPackage($forDb);
+        }
 
         if ($packageId === null) {
             throw new RuntimeException("Failed to register package '{$packageName}' in the database.");
@@ -99,21 +119,25 @@ readonly class PackageInstaller implements IPackageInstaller
             $this->assetLinks->register($packageId, PACKAGE_STORAGE . $packageName, $manifest);
         }
 
-        $hookFile = $destination . DIRECTORY_SEPARATOR . 'install.php';
+        $hookFile = $destination . DIRECTORY_SEPARATOR . ($updating ? 'update.php' : 'install.php');
         if (is_file($hookFile)) {
             $hook = \object\ObjectHandler::createObjectFromFile($hookFile);
-            if ($hook instanceof \packages\installer\interface\IPackageInstall) {
+            if ($updating && $hook instanceof \package\install\interfaces\IPackageUpdate) {
+                if (!$hook->update($packageId, $packageName)) throw new RuntimeException('Package update hook failed.');
+            } elseif (!$updating && $hook instanceof \package\install\interfaces\IPackageInstall) {
                 if (!$hook->postInstall($packageId, $packageName)) throw new RuntimeException('Package post-install hook failed.');
-            } elseif ($hook instanceof \installer\interfaces\package\actions\IPostInstall) {
+            } elseif ($updating && $hook instanceof \installer\interfaces\package\actions\IPostUpdate) {
+                $hook->postUpdate($packageId);
+            } elseif (!$updating && $hook instanceof \installer\interfaces\package\actions\IPostInstall) {
                 $hook->postInstall($packageId);
+            } else {
+                throw new RuntimeException('Package hook does not implement the required install/update contract.');
             }
         }
-        $this->cleanup($extractedBase);
-
-        $e = new PackageInstalledEvent();
+        $e = $updating ? new \installer\events\PackageUpdatedEvent() : new PackageInstalledEvent();
         $e->setId($packageId);
         $e->setManifest($manifest);
-        $eventDispatcher->dispatch($e);
+        if ($eventDispatcher instanceof \event\EventDispatcher) $eventDispatcher->dispatch($e);
 
         return true;
     }
@@ -138,7 +162,7 @@ readonly class PackageInstaller implements IPackageInstaller
                 continue;
             }
             $fullPath = $extractedBase . DIRECTORY_SEPARATOR . $entry;
-            if (is_dir($fullPath)) {
+            if (is_dir($fullPath) && is_file($fullPath . DIRECTORY_SEPARATOR . 'manifest.json')) {
                 return $fullPath;
             }
         }
@@ -148,7 +172,7 @@ readonly class PackageInstaller implements IPackageInstaller
 
     private function cleanup(string $dir): void
     {
-        if (!is_dir($dir)) {
+        if (!is_dir($dir) || is_link($dir)) {
             return;
         }
 
@@ -158,7 +182,7 @@ readonly class PackageInstaller implements IPackageInstaller
                 continue;
             }
             $path = $dir . DIRECTORY_SEPARATOR . $entry;
-            is_dir($path) ? $this->cleanup($path) : unlink($path);
+            is_dir($path) && !is_link($path) ? $this->cleanup($path) : unlink($path);
         }
 
         rmdir($dir);

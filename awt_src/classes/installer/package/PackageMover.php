@@ -35,6 +35,7 @@ class PackageMover implements IPackageMover
             throw new RuntimeException("Destination directory does not exist: {$this->destination}");
         }
 
+        $this->scanned = ['directories' => [], 'files' => []];
         $this->scanDirectory($this->source);
 
         foreach ($this->scanned["directories"] as $dir) {

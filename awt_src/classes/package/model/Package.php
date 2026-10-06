@@ -11,6 +11,8 @@ use package\dependency\Dependency;
 
 class Package extends Model
 {
+    public ?string $store_id = null;
+
     // Core identification
     public string $name = "";
     public ?string $author = null;
@@ -50,6 +52,24 @@ class Package extends Model
             $this->selectByID($id, "awt_package");
         }
 
+    }
+
+    public function getStoreId(): ?string { return $this->store_id; }
+    public function setStoreId(?string $storeId): void { $this->store_id = $storeId; }
+    public function getPackagePath(): string { return PACKAGES . str_replace(' ', '', $this->name); }
+    public function getInfo(): array
+    {
+        return [
+            'name' => $this->name, 'description' => $this->description,
+            'icon' => $this->icon, 'previewImage' => $this->preview_image,
+            'version' => $this->version, 'minimumAwtVersion' => $this->minimum_awt_version,
+            'maximumAwtVersion' => $this->maximum_awt_version,
+            'license' => $this->license, 'licenseUrl' => $this->license_url,
+            'author' => $this->author, 'system' => $this->system_package,
+            'type' => $this->system_package ? 'System' : match ($this->type) {
+                0 => 'System', 1 => 'Plugin', 2 => 'Theme', default => 'Unknown',
+            },
+        ];
     }
 
     // Getters

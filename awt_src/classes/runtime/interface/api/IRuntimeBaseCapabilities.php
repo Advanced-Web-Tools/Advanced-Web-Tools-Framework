@@ -63,7 +63,7 @@ interface IRuntimeBaseCapabilities
      * @param string $className
      * @return object|null
      */
-    public function getPassable(string $className): ?object;
+    public function getPassable(string $runtimeName, ?string $className = null, ?string $type = null): ?object;
 
     /**
      * Returns a declared class from the file. Only works withing the same package.

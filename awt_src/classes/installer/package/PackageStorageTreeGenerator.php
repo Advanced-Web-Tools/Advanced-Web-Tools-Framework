@@ -141,8 +141,27 @@ class PackageStorageTreeGenerator implements IPackageStorageTreeGenerator
      */
     public function registerItems(): bool
     {
+        $existing = [];
+        foreach ($this->repository->fetchByOwnerTypeAndOwner(EOwnerType::PACKAGE, $this->packageId) as $entry) {
+            $existing[$entry->getPath()] = $entry;
+        }
         foreach ($this->entries as $entry) {
-            $this->repository->create($entry);
+            $previous = $existing[$entry->getPath()] ?? null;
+            if ($previous === null) {
+                $this->repository->create($entry);
+            } else {
+                $entry->id = $previous->id;
+                $entry->setModelId($previous->id);
+                $changed = false;
+                foreach (['name', 'path', 'url', 'size', 'middleware', 'lastModified', 'ownerId', 'ownerType'] as $field) {
+                    $before = $previous->$field;
+                    $after = $entry->$field;
+                    if ($before instanceof EOwnerType) $before = $before->value;
+                    if ($after instanceof EOwnerType) $after = $after->value;
+                    if ($before !== $after) { $changed = true; break; }
+                }
+                if ($changed && !$this->repository->update($entry)) throw new \RuntimeException('Failed to update package asset registration.');
+            }
         }
 
         return true;
