@@ -4,6 +4,7 @@ namespace packages\runtime\api;
 
 use packages\runtime\handler\enums\ERuntimeFlags;
 use router\interface\IRouter;
+use router\interface\IRoute;
 use router\Router;
 
 /**
@@ -34,11 +35,11 @@ abstract class RuntimeRouterAPI extends RuntimeAPI implements IRouter
     /**
      * Adds a Router instance to the routers' collection.
      *
-     * @param Router $router The router instance to be added.
+     * @param IRoute $router The router instance to be added.
      */
-    public function addRouter(Router $router): void
+    public function addRouter(IRoute $router): void
     {
-        $router->eventDispatcher = $this->eventDispatcher;
+        $router->addEventDispatcher($this->eventDispatcher);
         $this->routers[] = $router;
     }
 

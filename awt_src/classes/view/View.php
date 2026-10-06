@@ -20,6 +20,13 @@ class View extends Render
      * @var string The name of the view to be rendered.
      */
     public string $viewName;
+    private ?\router\interface\ICsrfTokenManager $csrfTokens = null;
+
+    public function setCsrfTokenManager(\router\interface\ICsrfTokenManager $tokens): self
+    {
+        $this->csrfTokens = $tokens;
+        return $this;
+    }
 
     /**
      * @var DOMDocument The DOM representation of the rendered view page.
@@ -73,7 +80,10 @@ class View extends Render
         $this->loadTemplate();
         $this->createBundleObjects();
         try {
-            $parser = new BladeOne($this->viewDirectory, COMPILED, BladeOne::MODE_AUTO);
+            $parser = new BladeOne($this->viewDirectory, COMPILED, BladeOne::MODE_AUTO,
+                csrfTokens: $this->csrfTokens ?? new \router\security\Csrf());
+            // Also populate the property used by already-compiled @csrf templates.
+            $parser->getCsrfToken();
             $parser->setFileExtension(".awt.php");
 
             $parser->addAssetDict(0, $this->localAssetPath);
