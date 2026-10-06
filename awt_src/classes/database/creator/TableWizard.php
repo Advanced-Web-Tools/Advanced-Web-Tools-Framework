@@ -45,7 +45,7 @@ class TableWizard
 {
     /** Columns queued for the next createTable() call. */
     private array $columns = [];
-
+    private bool $headless = false;
     private ColumnSQLBuilder $sqlBuilder;
 
     /**
@@ -60,6 +60,13 @@ class TableWizard
     ) {
         $this->sqlBuilder = new ColumnSQLBuilder();
     }
+
+    public function headless(): self
+    {
+        $this->headless = true;
+        return $this;
+    }
+
 
     /**
      * Convenience static constructor that wires the default concrete
@@ -140,11 +147,21 @@ class TableWizard
         $result = $this->schema->executeDDL($sql);
 
         if ($result) {
-            $tableId = $this->registry->registerTable($tableName, $this->creatorId);
+
+            $tableId = null;
+
+            if(!$this->headless) {
+                $tableId = $this->registry->registerTable($tableName, $this->creatorId);
+            }
+
 
             foreach ($this->columns as $column) {
                 $def = $column->build();
-                $this->registry->registerColumn($tableId, $def->name, $def->type);
+
+                if(!$this->headless) {
+                    $this->registry->registerColumn($tableId, $def->name, $def->type);
+                }
+
 
                 // Standalone index statements are run after the table exists.
                 $indexSQL = $this->sqlBuilder->buildIndexSQL($tableName, $def);

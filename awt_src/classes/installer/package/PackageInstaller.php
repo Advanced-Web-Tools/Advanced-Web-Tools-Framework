@@ -2,6 +2,7 @@
 
 namespace installer\package;
 
+use installer\events\PackageInstalledEvent;
 use installer\interfaces\package\IExtractor;
 use installer\interfaces\package\IPackageInstaller;
 use installer\interfaces\package\IPackageMover;
@@ -28,6 +29,7 @@ readonly class PackageInstaller implements IPackageInstaller
      */
     public function install(): bool
     {
+        global $eventDispatcher;
         $this->extractor->extract();
         $extractedBase = $this->extractor->getDestination();
 
@@ -107,6 +109,11 @@ readonly class PackageInstaller implements IPackageInstaller
             }
         }
         $this->cleanup($extractedBase);
+
+        $e = new PackageInstalledEvent();
+        $e->setId($packageId);
+        $e->setManifest($manifest);
+        $eventDispatcher->dispatch($e);
 
         return true;
     }
