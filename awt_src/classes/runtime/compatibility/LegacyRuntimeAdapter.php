@@ -27,7 +27,7 @@ final class LegacyRuntimeAdapter
             } : 1,
             'status' => $origin->packageStatus === \packages\enums\EPackageStatus::Active,
             'installation_date' => $origin->getInstallationDate() ?? '',
-            'store_id' => $origin->getStoreId(), 'installed_by' => $origin->getInstalledBy(),
+            'store_id' => $origin->getStoreId(),
             'dependencies' => $origin->dependencies,
         ]);
         $package->createDependencyCollection();
@@ -58,9 +58,7 @@ final class LegacyRuntimeAdapter
         $origin->packageStatus = $package->status
             ? \packages\enums\EPackageStatus::Active : \packages\enums\EPackageStatus::Disabled;
         $origin->setStoreId($package->dynamicData['store_id'] ?? null);
-        $origin->setInstalledBy($package->dynamicData['installed_by'] ?? null);
         $origin->setInstallationDate($package->installation_date);
-        $origin->installedByUsername = (string) ($package->dynamicData['installed_by'] ?? 'AWT');
         $api->setInfo($origin);
     }
 

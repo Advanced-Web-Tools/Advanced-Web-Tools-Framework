@@ -19,6 +19,9 @@ namespace database\creator\interface;
  */
 interface ITableRegistry
 {
+    /** @return string[] Names of tables created by the given package owner. */
+    public function findByOwner(int $ownerId): array;
+
     /**
      * Check whether a table is registered in the framework schema.
      *

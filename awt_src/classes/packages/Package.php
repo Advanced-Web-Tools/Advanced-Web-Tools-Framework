@@ -17,7 +17,6 @@ class Package
 {
     protected ?int $id = null;                      // Unique identifier for the package.
     protected ?string $storeId = null;                 // Identifier for the store where the package is located.
-    protected ?int $installedBy = null;             // ID of the user who installed the package.
     public string $name;                             // Name of the package.
     public ?string $description = null;              // Description of the package.
     public ?string $icon = null;                     // Path to the package icon.
@@ -78,26 +77,6 @@ class Package
     public function setStoreId(?string $storeId): void
     {
         $this->storeId = $storeId;
-    }
-
-    /**
-     * Gets the ID of the user who installed the package.
-     *
-     * @return int|null The ID of the installer or null if not set.
-     */
-    public function getInstalledBy(): ?int
-    {
-        return $this->installedBy;
-    }
-
-    /**
-     * Sets the ID of the user who installed the package.
-     *
-     * @param int|null $installedBy The installer user ID.
-     */
-    public function setInstalledBy(?int $installedBy): void
-    {
-        $this->installedBy = $installedBy;
     }
 
     /**
@@ -278,7 +257,6 @@ class Package
             "license" => $this->license,
             "licenseUrl" => $this->licenseUrl,
             "author" => $this->author,
-            "installedBy" => $this->installedBy,
             "previewImage" => $this->previewImage,
             "system" => $this->systemPackage,
             "type" => $type,

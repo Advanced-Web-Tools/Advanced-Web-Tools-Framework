@@ -116,7 +116,10 @@ class StorageRepository implements IStorageRepository
                 if ($id === null) throw new \RuntimeException('Failed to register storage entry.');
                 $entry->id = $id;
                 $entry->setUrl($oldUrl);
-                if (!$this->update($entry)) throw new \RuntimeException('Failed to persist storage URL.');
+                // Explicit URLs were persisted by the insert; only generated URLs need an update.
+                if ($entry->url !== $oldUrl && !$this->update($entry)) {
+                    throw new \RuntimeException('Failed to persist storage URL.');
+                }
                 $entry->setModelId($id);
                 return $entry;
             });
