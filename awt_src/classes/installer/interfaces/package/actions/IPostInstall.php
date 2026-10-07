@@ -10,5 +10,5 @@ interface IPostInstall
      * @param int $packageId
      * @return void
      */
-    public function postInstall(int $packageId, string $packageName): void;
+    public function postInstall(int $packageId, string $packageName): bool;
 }
