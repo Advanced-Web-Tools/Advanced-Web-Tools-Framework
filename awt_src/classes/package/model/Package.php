@@ -11,8 +11,6 @@ use package\dependency\Dependency;
 
 class Package extends Model
 {
-    public ?string $store_id = null;
-
     // Core identification
     public string $name = "";
     public ?string $author = null;
