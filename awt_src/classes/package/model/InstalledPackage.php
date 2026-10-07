@@ -8,7 +8,7 @@ class InstalledPackage extends Package
 {
     public int $id;
     public bool $status = false;
-    public string $installation_date = '';
+    public ?string $installation_date = null;
 
     public function getInfo(): array
     {

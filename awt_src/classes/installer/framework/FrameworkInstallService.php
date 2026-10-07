@@ -123,7 +123,6 @@ class FrameworkInstallService
             $pdo = new PDO($dsn, $username, $password, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_PERSISTENT => true,
-                PDO::ATTR_TIMEOUT => 5,
             ]);
             $shared['DBEngine']['PDO'] = $pdo;
             return true;
@@ -186,7 +185,7 @@ class FrameworkInstallService
         $package = new InstalledPackage();
         $package->setId(1);
         $package->setName("AWT");
-        $package->setVersion("27.0.0");
+        $package->setVersion(AWT_VERSION);
         $package->setAuthor("ElStefanos");
         $package->setMinimumAwtVersion(AWT_VERSION);
         $package->setMaximumAwtVersion(AWT_VERSION);
