@@ -38,16 +38,10 @@ Unlike monolithic frameworks such as Laravel or Symfony, AWT operates as a micro
 
 ## Notes
 
-- **PHP Version** - Requires PHP 8.x or higher.
+- **PHP Version** - Requires PHP 8.3 or higher.
 - **Configuration** - Core settings are managed via `awt_data/config/awt_config.php`.
 - **Database** - Configure your database connection in `awt_data/config/awt_db.php`. Relational databases are currently supported.
 - **Public Directory** - Point your web server's document root to the `public` folder for proper routing and security.
-
-## Coming Soon
-
-- **Asynchronous Server** - Support for async request handling, enabling faster response times and improved scalability.
-- **Request-Informed Runtime** - On subsequent requests, only the relevant controllers will execute - skipping full package initialization for a leaner runtime.
-- **WebSockets** - Real-time, bidirectional communication via WebSocket support.
 
 ## Maintainers
 
