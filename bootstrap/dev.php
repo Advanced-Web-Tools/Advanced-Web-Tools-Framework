@@ -8,10 +8,10 @@ use package\facade\PackageFacade;
 use vfs\storage\services\LocalFileSystemService;
 use vfs\storage\StorageRepository;
 use vfs\transient\TransientStorageEntry;
-use setting\Config;
 
-if (DEBUG && REMOTE_INSTALL_FOR_DEVS && $_SERVER['REQUEST_METHOD'] == 'POST' && $_SERVER['REQUEST_URI'] == '/dev/install') {
-    if (!isset($_FILES["package"]) || DEV_SECRET != $_POST["devSecret"]) {
+if (DEBUG && REMOTE_INSTALL_FOR_DEVS && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+    && parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) === '/dev/install') {
+    if (!isset($_FILES["package"]) || DEV_SECRET != ($_POST["devSecret"] ?? null)) {
         die(WEB_NAME . ": Wrong dev secret, or missing file.");
     }
 
@@ -35,5 +35,5 @@ if (DEBUG && REMOTE_INSTALL_FOR_DEVS && $_SERVER['REQUEST_METHOD'] == 'POST' && 
         die($e->getMessage());
     }
 
-    die("Installed on " . Config::getConfig("AWT", "Website Name")->getValue());
+    die("Installed on " . WEB_NAME);
 }

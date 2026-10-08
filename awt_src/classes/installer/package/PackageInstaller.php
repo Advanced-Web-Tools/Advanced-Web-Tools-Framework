@@ -127,9 +127,9 @@ readonly class PackageInstaller implements IPackageInstaller
             } elseif (!$updating && $hook instanceof \package\install\interfaces\IPackageInstall) {
                 if (!$hook->postInstall($packageId, $packageName)) throw new RuntimeException('Package post-install hook failed.');
             } elseif ($updating && $hook instanceof \installer\interfaces\package\actions\IPostUpdate) {
-                $hook->postUpdate($packageId);
+                $hook->postUpdate($packageId, $packageName);
             } elseif (!$updating && $hook instanceof \installer\interfaces\package\actions\IPostInstall) {
-                $hook->postInstall($packageId);
+                $hook->postInstall($packageId, $packageName);
             } else {
                 throw new RuntimeException('Package hook does not implement the required install/update contract.');
             }

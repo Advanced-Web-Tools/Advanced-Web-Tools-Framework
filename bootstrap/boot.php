@@ -37,7 +37,7 @@ define("HOSTNAME", getDomainName());
 
 $shared["AWT"]["Settings"] = $settings;
 
-if(defined("DEV")) {
+if (PHP_SAPI !== 'cli' && DEBUG && REMOTE_INSTALL_FOR_DEVS) {
     require_once  __DIR__ . '/dev.php';
 }
 
