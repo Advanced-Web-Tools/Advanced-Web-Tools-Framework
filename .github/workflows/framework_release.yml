@@ -1,0 +1,65 @@
+name: Framework release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: framework-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository and tags
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: version
+        shell: python
+        run: |
+          import os
+          import re
+          import subprocess
+
+          tags = subprocess.check_output(
+              ["git", "tag", "--list"],
+              text=True
+          ).splitlines()
+
+          patches = [
+              int(match.group(1))
+              for tag in tags
+              if (match := re.fullmatch(r"27\.0\.(\d+)", tag))
+          ]
+
+          version = f"27.0.{max(patches, default=0) + 1}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"tag={version}\n")
+
+      - name: Create ZIP without a wrapper folder
+        run: |
+          git archive \
+            --format=zip \
+            --output="$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" \
+            HEAD
+
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$VERSION" \
+            "$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" \
+            --target "$GITHUB_SHA" \
+            --title "AWT Framework $VERSION" \
+            --generate-notes
