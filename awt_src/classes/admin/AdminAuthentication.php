@@ -78,26 +78,33 @@ final class AdminAuthentication extends SessionHandler
      * Authenticates the administrator by verifying the username and
      * password against the database.
      *
-     * The method hashes the password using SHA-512 and checks for a
-     * matching record in the "awt_admin" table. If a match is found,
-     * it initializes the session and stores the admins information.
+     * Loads the administrator by username and verifies the stored password
+     * hash. Legacy hashes and outdated costs are upgraded after verification.
+     * Successful authentication initializes the administrator session.
      *
      * @return bool Returns true if authentication is successful,
      * false otherwise.
      */
     public function authenticate(): bool
     {
-        $password_hash = hash('SHA512', $this->password);
         $result = $this->database->table("awt_admin")
             ->select()
             ->where([
                 'username' => $this->userName,
-                'password' => $password_hash,
             ])
             ->get();
-        if(!empty($result)){
+        if (!empty($result) && AdminPassword::verify($this->password, $result[0]['password'])) {
+
+            if (AdminPassword::needsRehash($result[0]['password'])) {
+                if (!$this->database->table("awt_admin")
+                    ->where(['id' => $result[0]['id'], 'password' => $result[0]['password']])
+                    ->update(['password' => AdminPassword::hash($this->password)])) {
+                    return false;
+                }
+            }
 
             $this->SessionHandler();
+            session_regenerate_id(true);
             $_SESSION['admin']['id'] = $result[0]['id'];
             $_SESSION['admin']['username'] = $result[0]['username'];
             $_SESSION['admin']['permission'] = $result[0]['permission_level'];
