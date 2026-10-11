@@ -10,6 +10,8 @@
 
 namespace admin\model;
 
+use admin\AdminPassword;
+
 use /**
  * The Model class typically serves as the base class for all data-driven models
  * in the application, providing core functionalities for data manipulation,
@@ -115,8 +117,7 @@ class AdminModel extends Model
 
     public function setPassword(string $password): self
     {
-        $password = hash("SHA512", $password);
-        $this->password = $password;
+        $this->password = AdminPassword::hash($password);
 
         return $this;
     }
@@ -160,7 +161,7 @@ class AdminModel extends Model
 
     public function changePassword(string $oldPassword, string $newPassword): bool
     {
-        if ($this->password === hash("SHA512", $oldPassword)) {
+        if (isset($this->password) && AdminPassword::verify($oldPassword, $this->password)) {
             return $this->setPassword($newPassword)->save();
         }
         return false;
