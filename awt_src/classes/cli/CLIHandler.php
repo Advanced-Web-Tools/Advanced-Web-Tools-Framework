@@ -156,4 +156,9 @@ class CLIHandler
 
         return implode(PHP_EOL, $lines) . PHP_EOL;
     }
+
+    public function getCommandsList(): array
+    {
+        return $this->commands;
+    }
 }

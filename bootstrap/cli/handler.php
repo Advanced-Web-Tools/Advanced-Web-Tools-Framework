@@ -25,7 +25,8 @@ if (DB_TYPE !== '') {
     $cliHandler->addCommand(new HelloCommand());
     $cliHandler->addCommand(new PackageManagerCommand());
 
-    $loader->CLIHandler = $cliHandler;
+    foreach($loader->CLIHandler->getCommandsList() as $command)
+        $cliHandler->addCommand($command);
 
     $rc = new RoutesCommand();
     $rc->addRoutes($routerManager->getRoutes());
