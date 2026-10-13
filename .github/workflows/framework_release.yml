@@ -1,13 +1,7 @@
 name: Framework release
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '.gitattributes'
-      - 'README.md'
-      - 'LICENSE'
-      - 'SECURITY.md'
+  workflow_dispatch:
 
 permissions:
   contents: write
