@@ -2,7 +2,6 @@
 
 <img width="500" alt="Advanced Web Tools Framework" src="https://github.com/user-attachments/assets/0aff0cb0-4993-446b-b66e-f6d18350cd45" />
 
-# Advanced Web Tools
 
 ### Build through packages. Scale without touching the core.
 
