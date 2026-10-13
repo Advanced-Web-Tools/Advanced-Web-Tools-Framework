@@ -1,5 +1,5 @@
 <?php
-const AWT_VERSION = "27.0.3";
+const AWT_VERSION = "27.0.4";
 const PACKAGE_MAX_LOAD_TRY = 5;
 
 const DEBUG = true;
@@ -16,10 +16,9 @@ const SHOW_SQL_CONNECTIONS_CALLS = false;
 const REMOTE_INSTALL_FOR_DEVS = false;
 const DEV_SECRET = "12345678";
 
-ini_set("post_max_size", "512M");
-ini_set("upload_max_filesize", "512M");
+// Upload limits must be applied before PHP parses the request.
+// See public/.user.ini (CGI/FPM), public/.htaccess (mod_php), and README.md.
 ini_set("max_execution_time", "300");
-ini_set("max_input_time", "300");
 
 if (DEBUG) {
     ini_set('display_startup_errors', 1);
@@ -29,5 +28,3 @@ if (DEBUG) {
     error_reporting(0);
     ini_set('display_errors', 0);
 }
-
-
