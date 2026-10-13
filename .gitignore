@@ -14,4 +14,6 @@ public_html.code-workspace
 /awt_data/temp/
 /awt_data/*
 /awt_data/media/*
+/awt_db.sqlite
+/awt_db.sqlite-*
 /dev_run/test.php

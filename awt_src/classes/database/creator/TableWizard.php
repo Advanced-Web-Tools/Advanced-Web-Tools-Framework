@@ -5,10 +5,12 @@ namespace database\creator;
 use database\cache\DatabaseCache;
 use database\creator\column\ColumnSQLBuilder;
 use database\creator\interface\ITableRegistry;
+use database\creator\interface\ITableRenamingRegistry;
 use database\creator\interface\ITableSchemaProvider;
 use database\creator\table\TableRegistry;
 use database\creator\table\TableSchemaProvider;
 use database\DatabaseManager;
+use database\DatabaseDialect;
 use database\provider\DatabaseProvider;
 use database\query\QueryBuilder;
 
@@ -47,6 +49,7 @@ class TableWizard
     private array $columns = [];
     private bool $headless = false;
     private ColumnSQLBuilder $sqlBuilder;
+    private readonly string $dialect;
 
     /**
      * @param int                  $creatorId  The package/plugin ID recorded against new tables.
@@ -58,7 +61,8 @@ class TableWizard
         private readonly ITableSchemaProvider $schema = new TableSchemaProvider(new DatabaseProvider()),
         private readonly ITableRegistry       $registry = new TableRegistry(new DatabaseManager()),
     ) {
-        $this->sqlBuilder = new ColumnSQLBuilder();
+        $this->dialect = DatabaseDialect::current();
+        $this->sqlBuilder = new ColumnSQLBuilder($this->dialect);
     }
 
     public function headless(): self
@@ -109,7 +113,8 @@ class TableWizard
     /**
      * Create a new database table from the columns queued via addColumn().
      *
-     * The table is built with ENGINE=InnoDB and utf8mb4_general_ci collation.
+     * MySQL tables use ENGINE=InnoDB and utf8mb4_general_ci collation;
+     * SQLite tables omit these engine-specific options.
      * Foreign key constraints are appended as trailing clauses inside the
      * CREATE TABLE statement, separate from the column definitions.
      * Regular (non-unique) INDEX columns are created as standalone statements
@@ -142,7 +147,8 @@ class TableWizard
         }
 
         $allClauses = implode(",\n    ", array_merge($columnClauses, $foreignKeyClauses));
-        $sql        = "CREATE TABLE `{$tableName}` (\n    {$allClauses}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;";
+        $options = $this->dialect === 'sqlite' ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci';
+        $sql = "CREATE TABLE `{$tableName}` (\n    {$allClauses}\n){$options};";
 
         $result = $this->schema->executeDDL($sql);
 
@@ -212,9 +218,14 @@ class TableWizard
             return false;
         }
 
-        $result = $this->schema->executeDDL("RENAME TABLE `{$from}` TO `{$to}`");
+        $sql = $this->dialect === 'sqlite'
+            ? "ALTER TABLE `{$from}` RENAME TO `{$to}`"
+            : "RENAME TABLE `{$from}` TO `{$to}`";
+        $result = $this->schema->executeDDL($sql);
 
-        if ($result) {
+        if ($result && $this->registry instanceof ITableRenamingRegistry) {
+            $this->registry->renameTable($from, $to);
+        } elseif ($result) {
             // Re-register the table under the new name, preserving the creator ID.
             $tableId = $this->registry->getTableId($from);
             $this->registry->unregisterTable($from);
@@ -251,8 +262,15 @@ class TableWizard
         }
 
         $def    = $column->build();
+        $columnSQL = $this->sqlBuilder->buildColumnSQL($def);
+        if ($this->dialect === 'sqlite' && $def->foreignKeyTable !== null && $def->foreignKeyColumn !== null) {
+            // SQLite requires REFERENCES inline when adding a column.
+            $columnSQL .= " REFERENCES `{$def->foreignKeyTable}`(`{$def->foreignKeyColumn}`)";
+            if ($def->onDelete !== null) $columnSQL .= " ON DELETE {$def->onDelete}";
+            if ($def->onUpdate !== null) $columnSQL .= " ON UPDATE {$def->onUpdate}";
+        }
         $result = $this->schema->executeDDL(
-            "ALTER TABLE `{$tableName}` ADD COLUMN " . $this->sqlBuilder->buildColumnSQL($def)
+            "ALTER TABLE `{$tableName}` ADD COLUMN " . $columnSQL
         );
 
         if (!$result) {
@@ -261,7 +279,7 @@ class TableWizard
 
         // Foreign key must be a separate ALTER TABLE statement.
         $fkSQL = $this->sqlBuilder->buildForeignKeySQL($def);
-        if ($fkSQL !== null) {
+        if ($fkSQL !== null && $this->dialect !== 'sqlite') {
             $this->schema->executeDDL("ALTER TABLE `{$tableName}` ADD {$fkSQL}");
         }
 
@@ -318,6 +336,9 @@ class TableWizard
      */
     public function modifyColumn(string $tableName, ColumnCreator $column): bool
     {
+        if ($this->dialect === 'sqlite') {
+            throw new \LogicException('SQLite column definition changes require rebuilding the table.');
+        }
         if (!$this->registry->columnExists($tableName, $column->getName())) {
             return false;
         }
@@ -406,7 +427,7 @@ class TableWizard
     public function dropIndex(string $tableName, string $indexName): bool
     {
         return $this->schema->executeDDL(
-            "DROP INDEX `{$indexName}` ON `{$tableName}`"
+            "DROP INDEX `{$indexName}`" . ($this->dialect === 'sqlite' ? '' : " ON `{$tableName}`")
         );
     }
 

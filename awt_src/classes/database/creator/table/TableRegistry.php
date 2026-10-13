@@ -2,7 +2,7 @@
 
 namespace database\creator\table;
 
-use database\creator\interface\ITableRegistry;
+use database\creator\interface\ITableRenamingRegistry;
 use database\DatabaseManager;
 
 /**
@@ -19,7 +19,7 @@ use database\DatabaseManager;
  * This class handles only registry data. It never issues DDL or touches
  * the real database schema; that is TableSchemaProvider's responsibility.
  */
-class TableRegistry implements ITableRegistry
+class TableRegistry implements ITableRenamingRegistry
 {
     /**
      * @param DatabaseManager $db The database manager used for all registry queries.
@@ -81,6 +81,11 @@ class TableRegistry implements ITableRegistry
             ->table('awt_table')
             ->insert(['name' => $name, 'creator' => $creatorId])
             ->executeInsert();
+    }
+
+    public function renameTable(string $from, string $to): void
+    {
+        $this->db->table('awt_table')->where(['name' => $from])->update(['name' => $to]);
     }
 
     /** {@inheritdoc} */

@@ -62,7 +62,8 @@ class DatabaseManager
     {
         $this->provider = $source->provider;
         $this->cache = $source->cache;
-        $this->builder = new QueryBuilder();
+        $this->builder = clone $source->builder;
+        $this->builder->reset();
         return $this;
     }
 

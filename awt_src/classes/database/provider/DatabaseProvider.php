@@ -5,11 +5,9 @@ namespace database\provider;
 require_once CONFIG . '/awt_db.php';
 
 use database\exceptions\ProviderException;
-use database\interface\IProvider;
 use PDO;
 use PDOException;
 use PDOStatement;
-use RuntimeException;
 
 /**
  * DatabaseProvider
@@ -38,12 +36,15 @@ class DatabaseProvider implements \database\interface\ITransactionalProvider
         if ($this->pdo !== null) return $this->pdo;
         global $shared;
         if (!isset($shared['DBEngine']['PDO'])) {
-            $dsn = DB_TYPE . ':host=' . DB_HOSTNAME . ';dbname=' . DB_NAME;
+            $sqlite = strtolower(DB_TYPE) === 'sqlite';
+            $dsn = $sqlite ? 'sqlite:' . DB_NAME : DB_TYPE . ':host=' . DB_HOSTNAME . ';dbname=' . DB_NAME;
             try {
-                $shared['DBEngine']['PDO'] = new PDO($dsn, DB_USERNAME, DB_PASSWORD, [
+                $pdo = new PDO($dsn, $sqlite ? null : DB_USERNAME, $sqlite ? null : DB_PASSWORD, [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_PERSISTENT => true,
+                    PDO::ATTR_PERSISTENT => !$sqlite,
                 ]);
+                if ($sqlite) $pdo->exec('PRAGMA foreign_keys = ON');
+                $shared['DBEngine']['PDO'] = $pdo;
             } catch (PDOException $e) {
                 throw new ProviderException("Default", $e);
             }
