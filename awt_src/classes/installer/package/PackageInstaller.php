@@ -32,12 +32,11 @@ readonly class PackageInstaller implements IPackageInstaller
 
     private function apply(bool $updating): bool
     {
-        $this->extractor->extract();
-        $extractedBase = $this->extractor->getDestination();
         try {
-            return $this->applyExtracted($extractedBase, $updating);
+            $this->extractor->extract();
+            return $this->applyExtracted($this->extractor->getDestination(), $updating);
         } finally {
-            $this->cleanup($extractedBase);
+            $this->cleanup($this->extractor->getDestination());
         }
     }
 

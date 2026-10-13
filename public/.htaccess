@@ -1,3 +1,9 @@
+<IfModule php_module>
+    php_value upload_max_filesize 512M
+    php_value post_max_size 520M
+    php_value max_input_time 300
+</IfModule>
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
