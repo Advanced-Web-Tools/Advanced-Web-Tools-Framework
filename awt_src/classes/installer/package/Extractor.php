@@ -23,7 +23,7 @@ class Extractor implements IExtractor
      */
     public function extract(): void
     {
-        $this->destination .= hash("md5", $this->target->getName());
+        $this->destination .= bin2hex(random_bytes(16));
         $this->makeDestination();
 
         $result = $this->zip->open($this->target->getPath());
