@@ -1,2 +1,5 @@
 .github export-ignore
 .gitattributes export-ignore
+README.md export-ignore
+LICENSE export-ignore
+SECURITY.md export-ignore
