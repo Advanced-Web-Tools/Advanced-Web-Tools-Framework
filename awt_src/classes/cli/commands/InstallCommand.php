@@ -12,6 +12,17 @@ class InstallCommand implements CLICommand
     /** @var array<string, string> */
     private array $installationArguments = [];
 
+    private const ARGUMENT_FIELDS = [
+        'type' => 'database_type',
+        'db_type' => 'database_type',
+        'db' => 'database_name',
+        'host' => 'host',
+        'username' => 'username',
+        'password' => 'password',
+        'name' => 'website_name',
+        'path' => 'host_path',
+    ];
+
     public function __construct(private FrameworkInstallService $installer = new FrameworkInstallService()) {}
 
     public function getCommand(): string
@@ -21,21 +32,22 @@ class InstallCommand implements CLICommand
 
     public function getHelp(): string
     {
-        return 'Installation of the framework is available only when DB_TYPE is empty. Supply all seven arguments in order.'
-            . PHP_EOL . 'Use "" or two single quotes for an empty argument; quote values containing spaces.'
-            . PHP_EOL . 'Example: install mysql awt "" root "" "My Website" ""';
+        return 'Installation of the framework is available only when DB_TYPE is empty. Supply named arguments in any order.'
+            . PHP_EOL . 'Use key:"value"; quote values containing spaces. type and name are required; db is required for MySQL and PostgreSQL.'
+            . PHP_EOL . 'Example: install db:"awt" type:"mysql" username:"root" name:"My Website"'
+            . PHP_EOL . 'SQLite: install type:"sqlite" name:"My Website" (creates awt_db.sqlite in the project root).';
     }
 
     public function getArguments(): array
     {
         return [
-            "<database_type>" => "Database type. Valid options are mysql, postgresql, sqlite",
-            "<database_name>" => "Database name",
-            "<host>" => "Database host. Leave empty if you want to use the default host which is 'localhost'.",
-            "<username>" => "Database username",
-            "<password>" => "Database password. Can be empty but not suggested for security reasons.",
-            "<website_name>" => "Website name",
-            "<host_path>" => "Host path. Leave empty if you want to use the default path which is '/'."
+            'type:"type"' => 'Required. Database type: mysql, postgresql, sqlite. Alias: db_type.',
+            'db:"name"' => 'Required for MySQL and PostgreSQL. SQLite always uses awt_db.sqlite in the project root.',
+            'host:"host"' => "Optional. Database host; defaults to 'localhost'.",
+            'username:"user"' => 'Required for MySQL and PostgreSQL; optional for SQLite.',
+            'password:"password"' => 'Optional. Database password; defaults to empty.',
+            'name:"website name"' => 'Required. Website name.',
+            'path:"/"' => "Optional. Host path; defaults to '/'.",
         ];
     }
 
@@ -44,17 +56,8 @@ class InstallCommand implements CLICommand
         $this->result = '';
         $this->installationArguments = [];
 
-        if (count($args) !== count($this->getArguments())) {
-            $this->result = 'Invalid number of arguments. Type `help install` for help.';
-            return;
-        }
-
-        $configuration = array_combine(
-            ['database_type', 'database_name', 'host', 'username', 'password', 'website_name', 'host_path'],
-            array_values($args)
-        );
-
         try {
+            $configuration = $this->parseArguments($args);
             $this->installationArguments = $this->installer->validateConfiguration($configuration);
             $this->installer->install($this->installationArguments);
             $this->configAdmin();
@@ -63,6 +66,39 @@ class InstallCommand implements CLICommand
         } catch (\InvalidArgumentException | \RuntimeException $exception) {
             $this->result = $exception->getMessage();
         }
+    }
+
+    /** Tokens have already had their surrounding quotes removed by the CLI parser or shell. */
+    private function parseArguments(array $args): array
+    {
+        $configuration = array_fill_keys(array_values(self::ARGUMENT_FIELDS), '');
+        $seen = [];
+
+        foreach ($args as $argument) {
+            if (!is_string($argument) || !str_contains($argument, ':')) {
+                throw new \InvalidArgumentException('Use named arguments such as db:"awt" type:"mysql". Type `help install` for help.');
+            }
+            [$key, $value] = explode(':', $argument, 2);
+            if (!isset(self::ARGUMENT_FIELDS[$key])) {
+                throw new \InvalidArgumentException('Unknown installation argument. Type `help install` for help.');
+            }
+            $field = self::ARGUMENT_FIELDS[$key];
+            if (isset($seen[$field])) {
+                throw new \InvalidArgumentException("Duplicate installation argument: {$key}.");
+            }
+            $seen[$field] = true;
+            $configuration[$field] = $value;
+        }
+
+        $required = ['type', 'name'];
+        if (strtolower(trim($configuration['database_type'])) !== 'sqlite') $required[] = 'db';
+        foreach ($required as $key) {
+            if (!isset($seen[self::ARGUMENT_FIELDS[$key]]) || trim($configuration[self::ARGUMENT_FIELDS[$key]]) === '') {
+                throw new \InvalidArgumentException("Missing required installation argument: {$key}.");
+            }
+        }
+
+        return $configuration;
     }
 
     /** @return array<string, string> Validated arguments, or an empty array after validation fails. */

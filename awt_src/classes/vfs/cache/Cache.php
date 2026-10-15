@@ -6,6 +6,11 @@ class Cache
 {
     private static array $pools = [];
 
+    public static function resetPools(): void
+    {
+        self::$pools = [];
+    }
+
     public static function pool(string $name): CachePool
     {
         if (!isset(self::$pools[$name])) {

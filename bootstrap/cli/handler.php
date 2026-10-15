@@ -5,6 +5,7 @@ global $routerManager;
 global $loader;
 
 use cli\CLIHandler;
+use cli\commands\CacheCommand;
 use cli\commands\ClearCommand;
 use cli\commands\HelloCommand;
 use cli\commands\InstallCommand;
@@ -20,6 +21,7 @@ $_SERVER['REQUEST_URI'] = '/CLI/';
 $cliHandler->addCommand(new InstallCommand());
 
 if (DB_TYPE !== '') {
+    $cliHandler->addCommand(new CacheCommand());
     $cliHandler->addCommand(new ClearCommand());
     $cliHandler->addCommand(new VersionCommand());
     $cliHandler->addCommand(new HelloCommand());

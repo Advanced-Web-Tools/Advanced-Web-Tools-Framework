@@ -42,8 +42,15 @@ class FrameworkInstallService
         if (!in_array($configuration['database_type'], ['mysql', 'postgresql', 'sqlite'], true)) {
             throw new \InvalidArgumentException('Invalid database type. Valid options are mysql, postgresql, sqlite.');
         }
-        if (trim($configuration['database_name']) === '' || trim($configuration['username']) === '' || trim($configuration['website_name']) === '') {
-            throw new \InvalidArgumentException('Database name, database username, and website name must not be empty.');
+        if ($configuration['database_type'] === 'sqlite') {
+            $root = defined('ROOT') ? ROOT : dirname(__DIR__, 4);
+            $configuration['database_name'] = rtrim($root, '/\\') . DIRECTORY_SEPARATOR . 'awt_db.sqlite';
+        }
+        if (trim($configuration['database_name']) === '' || trim($configuration['website_name']) === '') {
+            throw new \InvalidArgumentException('Database name and website name must not be empty.');
+        }
+        if ($configuration['database_type'] !== 'sqlite' && trim($configuration['username']) === '') {
+            throw new \InvalidArgumentException('Database username must not be empty.');
         }
 
         $configuration['host'] = trim($configuration['host']) === '' ? 'localhost' : trim($configuration['host']);
@@ -120,10 +127,12 @@ class FrameworkInstallService
 
         try {
             // PDO connects during construction and throws if the connection fails.
-            $pdo = new PDO($dsn, $username, $password, [
+            $sqlite = strtolower(trim($type)) === 'sqlite';
+            $pdo = new PDO($dsn, $sqlite ? null : $username, $sqlite ? null : $password, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_PERSISTENT => true,
+                PDO::ATTR_PERSISTENT => !$sqlite,
             ]);
+            if ($sqlite) $pdo->exec('PRAGMA foreign_keys = ON');
             $shared['DBEngine']['PDO'] = $pdo;
             return true;
         } catch (\PDOException) {

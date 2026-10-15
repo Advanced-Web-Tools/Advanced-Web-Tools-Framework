@@ -2,12 +2,14 @@
 
 namespace database\creator\column;
 
+use database\DatabaseDialect;
+
 /**
  * ColumnSQLBuilder
  *
  * Sole responsibility: generate SQL fragments from a ColumnDefinition.
- * It holds no state of its own; every method is a pure transformation of
- * the definition it receives.
+ * Each instance retains its SQL dialect; methods transform the definitions
+ * they receive without changing query state.
  *
  * Three kinds of SQL are produced:
  *
@@ -24,6 +26,13 @@ namespace database\creator\column;
  */
 class ColumnSQLBuilder
 {
+    private readonly string $dialect;
+
+    public function __construct(?string $dialect = null)
+    {
+        $this->dialect = strtolower($dialect ?? DatabaseDialect::current());
+    }
+
     /**
      * SQL keyword defaults that must not be wrapped in single quotes.
      * Comparisons are performed case-insensitively.
@@ -55,6 +64,8 @@ class ColumnSQLBuilder
      */
     public function buildColumnSQL(ColumnDefinition $def): string
     {
+        if ($this->dialect === 'sqlite') return $this->buildSQLiteColumnSQL($def);
+
         $sql = "`{$def->name}` {$def->type}";
 
         // ENUM and SET derive their parenthesised list from $enumValues.
@@ -94,6 +105,44 @@ class ColumnSQLBuilder
             $sql .= " AFTER `{$def->after}`";
         }
 
+        return $sql;
+    }
+
+    private function buildSQLiteColumnSQL(ColumnDefinition $def): string
+    {
+        $type = strtoupper($def->type);
+        if ($type === 'SET') {
+            throw new \LogicException('SQLite does not support SET columns. Use TEXT instead.');
+        }
+        $integer = in_array($type, ['INT', 'INTEGER', 'TINYINT', 'SMALLINT', 'MEDIUMINT', 'BIGINT'], true);
+        if ($def->autoIncrement && !$integer) {
+            throw new \LogicException('SQLite auto-increment columns must be integer primary keys.');
+        }
+        $sqlType = match (true) {
+            $integer => 'INTEGER',
+            in_array($type, ['FLOAT', 'DOUBLE', 'REAL'], true) => 'REAL',
+            $type === 'DECIMAL' => 'NUMERIC',
+            $type === 'BLOB' => 'BLOB',
+            default => 'TEXT',
+        };
+        $sql = "`{$def->name}` {$sqlType}";
+        if ($def->autoIncrement) $sql .= ' PRIMARY KEY AUTOINCREMENT';
+        elseif ($def->index === 'PRIMARY') $sql .= ' PRIMARY KEY';
+        elseif ($def->index === 'UNIQUE') $sql .= ' UNIQUE';
+        $sql .= $def->nullable ? ' NULL' : ' NOT NULL';
+        if ($def->default !== '') {
+            $default = strtoupper($def->default) === 'NOW()' ? 'CURRENT_TIMESTAMP' : $def->default;
+            $sql .= $this->buildDefaultClause($default, $def->defaultAsDefined);
+        }
+        if ($def->unsigned && ($integer || $sqlType === 'REAL' || $sqlType === 'NUMERIC')) {
+            $sql .= " CHECK (`{$def->name}` >= 0)";
+        }
+        if ($type === 'ENUM' && $def->enumValues !== []) {
+            $values = array_map(fn(string $value) => "'" . str_replace("'", "''", $value) . "'", $def->enumValues);
+            $sql .= " CHECK (`{$def->name}` IN (" . implode(', ', $values) . '))';
+        }
+        if ($type === 'JSON') $sql .= " CHECK (`{$def->name}` IS NULL OR json_valid(`{$def->name}`))";
+        // SQLite has no column comments, length enforcement, or AFTER positioning.
         return $sql;
     }
 

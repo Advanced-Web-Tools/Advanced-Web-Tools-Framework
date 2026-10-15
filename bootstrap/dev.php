@@ -9,27 +9,47 @@ use vfs\storage\services\LocalFileSystemService;
 use vfs\storage\StorageRepository;
 use vfs\transient\TransientStorageEntry;
 
-if (DEBUG && REMOTE_INSTALL_FOR_DEVS && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
-    && parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) === '/dev/install') {
+if (
+    DEBUG
+    && REMOTE_INSTALL_FOR_DEVS
+    && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+    && parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) === '/dev/install'
+) {
     header('Content-Type: text/plain; charset=utf-8');
-    $postLimit = ini_parse_quantity(ini_get('post_max_size'));
-    if ($postLimit > 0 && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > $postLimit) {
+
+    // PHP applies its upload limits before this script runs.
+    // An oversized POST leaves both $_POST and $_FILES empty.
+    $postMaxSize = ini_get('post_max_size');
+    $postLimit = ini_parse_quantity($postMaxSize);
+    $requestSize = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+
+    if ($postLimit > 0 && $requestSize > $postLimit) {
         http_response_code(413);
-        die('Package request exceeds post_max_size (' . ini_get('post_max_size') . '). Configure the web PHP upload limits before retrying.');
+        die(
+            'Package request exceeds post_max_size (' . $postMaxSize . '). '
+            . 'Configure the web PHP upload limits before retrying.'
+        );
     }
+
     $secret = $_POST['devSecret'] ?? null;
     if (!is_string($secret) || !hash_equals((string) DEV_SECRET, $secret)) {
         http_response_code(403);
         die(WEB_NAME . ': Wrong dev secret.');
     }
+
     $file = $_FILES['package'] ?? null;
     if (!is_array($file) || !isset($file['error']) || !is_int($file['error'])) {
         http_response_code(400);
         die('Missing or invalid package upload.');
     }
+
     if ($file['error'] !== UPLOAD_ERR_OK) {
         [$status, $message] = match ($file['error']) {
-            UPLOAD_ERR_INI_SIZE => [413, 'Package exceeds upload_max_filesize (' . ini_get('upload_max_filesize') . '). Configure the web PHP upload limits before retrying.'],
+            UPLOAD_ERR_INI_SIZE => [
+                413,
+                'Package exceeds upload_max_filesize (' . ini_get('upload_max_filesize') . '). '
+                . 'Configure the web PHP upload limits before retrying.',
+            ],
             UPLOAD_ERR_FORM_SIZE => [413, 'Package exceeds the upload form size limit.'],
             UPLOAD_ERR_PARTIAL => [400, 'Package was only partially uploaded. Retry the upload.'],
             UPLOAD_ERR_NO_FILE => [400, 'Missing package upload.'],
@@ -41,22 +61,45 @@ if (DEBUG && REMOTE_INSTALL_FOR_DEVS && ($_SERVER['REQUEST_METHOD'] ?? '') === '
         http_response_code($status);
         die($message);
     }
-    if (!isset($file['tmp_name'], $file['name']) || !is_string($file['tmp_name'])
-        || !is_string($file['name']) || !is_uploaded_file($file['tmp_name'])) {
+
+    if (
+        !isset($file['tmp_name'], $file['name'])
+        || !is_string($file['tmp_name'])
+        || !is_string($file['name'])
+        || !is_uploaded_file($file['tmp_name'])
+    ) {
         http_response_code(400);
         die('Invalid package upload.');
     }
 
+    // This application limit supplements PHP's configured upload limits.
+    $maxPackageSize = 512 * 1024 * 1024;
+    if (filesize($file['tmp_name']) > $maxPackageSize) {
+        http_response_code(413);
+        die('Package exceeds the 512 MB upload limit.');
+    }
+
     try {
         set_time_limit(300);
+
+        $package = new TransientStorageEntry($file['name'], $file['tmp_name']);
+        $extractor = new Extractor(new ZipArchive(), $package, TEMP . 'dev_installer_');
+        $storageTreeGenerator = new PackageStorageTreeGenerator(
+            new LocalFileSystemService(),
+            new StorageRepository()
+        );
+
         $installer = new PackageInstaller(
-            new Extractor(new ZipArchive(), new TransientStorageEntry($file['name'], $file['tmp_name']), TEMP . 'dev_installer_'),
+            $extractor,
             new PackageMover('', PACKAGES),
-            new PackageStorageTreeGenerator(new LocalFileSystemService(), new StorageRepository()),
+            $storageTreeGenerator,
             (new PackageFacade())->getRepository()
         );
+
         if (($_POST['action'] ?? 'install') === 'update') {
-            if (!$installer->update()) throw new RuntimeException('Package update failed.');
+            if (!$installer->update()) {
+                throw new RuntimeException('Package update failed.');
+            }
         } else {
             $installer->execute();
         }
@@ -65,5 +108,5 @@ if (DEBUG && REMOTE_INSTALL_FOR_DEVS && ($_SERVER['REQUEST_METHOD'] ?? '') === '
         die($e->getMessage());
     }
 
-    die("Installed on " . WEB_NAME);
+    die('Installed on ' . WEB_NAME);
 }

@@ -1,5 +1,11 @@
+<FilesMatch "(?i)^awt_db\.sqlite(?:-(?:journal|wal|shm))?$">
+    Require all denied
+</FilesMatch>
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    RewriteRule ^awt_db\.sqlite(?:-(?:journal|wal|shm))?$ - [F,L,NC]
 
     RewriteCond %{REQUEST_URI} !^/awt_data/media [NC]
     RewriteCond %{REQUEST_URI} !^/awt_packages/ [NC]

@@ -2,6 +2,8 @@
 
 namespace database\query;
 
+use database\DatabaseDialect;
+
 /**
  * QueryBuilder
  *
@@ -32,6 +34,13 @@ class QueryBuilder
     private array  $orderByClauses = [];
     private array  $insertColumns   = [];
     private array  $insertBindings  = [];
+
+    private readonly string $dialect;
+
+    public function __construct(?string $dialect = null)
+    {
+        $this->dialect = strtolower($dialect ?? DatabaseDialect::current());
+    }
 
     // -------------------------------------------------------------------------
     // Fluent setters
@@ -184,6 +193,9 @@ class QueryBuilder
                 $sql               .= ' OFFSET :offset';
                 $bindings[':offset'] = $offset;
             }
+        } elseif ($offset !== null && $this->dialect === 'sqlite') {
+            $sql .= ' LIMIT -1 OFFSET :offset';
+            $bindings[':offset'] = $offset;
         }
 
         return new QueryPayload($sql, $bindings, $this->table, $this->conditions);
@@ -223,6 +235,9 @@ class QueryBuilder
             $this->assertIdentifier((string) $column, false);
             if ($value instanceof SqlExpression || $value === 'DEFAULT') {
                 $expression = $value instanceof SqlExpression ? $value->sql : 'DEFAULT';
+                if ($this->dialect === 'sqlite' && strtoupper(trim($expression)) === 'DEFAULT') {
+                    throw new \LogicException('SQLite UPDATE does not support DEFAULT. Supply the column default value explicitly.');
+                }
                 $setClauses[] = "{$column} = {$expression}";
             } else {
                 $placeholder = $this->placeholder();
