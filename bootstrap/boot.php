@@ -1,5 +1,11 @@
 <?php
-require_once CONFIG . 'awt_db.php';
+
+if(file_exists(CONFIG . 'awt_db.php')) {
+    require_once CONFIG . 'awt_db.php';
+} else {
+    define('DB_TYPE', '');
+}
+
 require_once CONFIG . 'awt_config.php';
 
 if (DB_TYPE === '') {
