@@ -9,11 +9,13 @@ interface IPackageInstaller
 
     /**
      * Installs the package.
+     * @param bool $installDependencies Recursively fetch missing/incompatible dependencies from manifest URLs.
      * @return bool
      */
-    public function install(): bool;
+    public function install(bool $installDependencies = false): bool;
 
-    public function update(): bool;
+    /** Update an installed package; dependency downloads are opt-in. */
+    public function update(bool $installDependencies = false): bool;
 
     /**
      * Executes the installer actions.

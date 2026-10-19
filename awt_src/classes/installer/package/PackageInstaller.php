@@ -7,11 +7,14 @@ use installer\interfaces\package\IExtractor;
 use installer\interfaces\package\IPackageInstaller;
 use installer\interfaces\package\IPackageMover;
 use installer\interfaces\package\IPackageStorageTreeGenerator;
+use package\dependency\Dependency;
 use package\manifest\exceptions\ManifestReaderException;
 use package\manifest\reader\ManifestReader;
 use package\model\repository\interfaces\IPackageRepository;
 use RuntimeException;
 use vfs\resource\ResourceCache;
+use vfs\transient\TransientStorageEntry;
+use ZipArchive;
 
 readonly class PackageInstaller implements IPackageInstaller
 {
@@ -21,6 +24,7 @@ readonly class PackageInstaller implements IPackageInstaller
         private IPackageStorageTreeGenerator $storageGenerator,
         private IPackageRepository           $packageRepository,
         private PackageAssetLinks            $assetLinks = new PackageAssetLinks(),
+        private PackageDownload              $download = new PackageDownload(),
     ) {}
 
     /**
@@ -28,20 +32,20 @@ readonly class PackageInstaller implements IPackageInstaller
      * @throws ManifestReaderException
      * @throws \JsonException
      */
-    public function install(): bool { return $this->apply(false); }
-    public function update(): bool { return $this->apply(true); }
+    public function install(bool $installDependencies = false): bool { return $this->apply(false, $installDependencies); }
+    public function update(bool $installDependencies = false): bool { return $this->apply(true, $installDependencies); }
 
-    private function apply(bool $updating): bool
+    private function apply(bool $updating, bool $installDependencies): bool
     {
         try {
             $this->extractor->extract();
-            return $this->applyExtracted($this->extractor->getDestination(), $updating);
+            return $this->applyExtracted($this->extractor->getDestination(), $updating, $installDependencies);
         } finally {
             $this->cleanup($this->extractor->getDestination());
         }
     }
 
-    private function applyExtracted(string $extractedBase, bool $updating): bool
+    private function applyExtracted(string $extractedBase, bool $updating, bool $installDependencies, array $chain = [], ?Dependency $expected = null): bool
     {
         global $eventDispatcher;
         $packageDir = is_file($extractedBase . DIRECTORY_SEPARATOR . 'manifest.json')
@@ -50,6 +54,14 @@ readonly class PackageInstaller implements IPackageInstaller
         $manifestPath = $packageDir . DIRECTORY_SEPARATOR . 'manifest.json';
 
         $manifest = ManifestReader::readFile($manifestPath);
+        if ($expected !== null && ($manifest['name'] !== $expected->name
+            || !Dependency::matchesVersion($manifest['version'], $expected->version))) {
+            throw new RuntimeException("Downloaded package does not match dependency: {$expected->name} {$expected->version}");
+        }
+        if (in_array($manifest['name'], $chain, true)) {
+            throw new RuntimeException('Circular package dependency: ' . implode(' -> ', [...$chain, $manifest['name']]));
+        }
+        $chain[] = $manifest['name'];
         if (defined('AWT_VERSION') && (version_compare(AWT_VERSION, $manifest['minimum_awt_version'], '<')
             || (!empty($manifest['maximum_awt_version']) && version_compare(AWT_VERSION, $manifest['maximum_awt_version'], '>')))) {
             throw new RuntimeException('Package is incompatible with this AWT version.');
@@ -61,20 +73,33 @@ readonly class PackageInstaller implements IPackageInstaller
         if (!$updating && $installedPackage !== null) {
             throw new RuntimeException("Package is already installed: {$manifest['name']}. Use the update workflow.");
         }
-        foreach ($manifest['dependencies'] as $data) {
-            $dependency = \package\dependency\Dependency::fromArray($data);
-            $installed = $this->packageRepository->getPackage($dependency->name);
-            if ($installed === null || !\package\dependency\Dependency::matchesVersion($installed['version'], $dependency->version)) {
-                throw new RuntimeException("Required dependency is missing or incompatible: {$dependency->name} {$dependency->version}");
-            }
-        }
-
         $verifyManifest  = new VerifyManifest($manifest);
         $verifyStructure = new VerifyStructure($packageDir);
         $preparer        = new PrepareInstallation($verifyManifest, $verifyStructure);
 
         if (!$preparer->prepare()->verify()) {
             return false;
+        }
+
+        foreach ($manifest['dependencies'] as $data) {
+            $dependency = Dependency::fromArray($data);
+            $installed = $this->packageRepository->getPackage($dependency->name);
+            if ($installed !== null && Dependency::matchesVersion($installed['version'], $dependency->version)) continue;
+            if (!$installDependencies) throw new RuntimeException("Required dependency is missing or incompatible: {$dependency->name} {$dependency->version}");
+            if (trim($dependency->url) === '') throw new RuntimeException("No download URL provided for dependency: {$dependency->name} {$dependency->version}");
+            if (in_array($dependency->name, $chain, true)) {
+                throw new RuntimeException('Circular package dependency: ' . implode(' -> ', [...$chain, $dependency->name]));
+            }
+            $this->installDependency($dependency, $installed !== null, $chain);
+        }
+
+        // A later sibling may have updated a shared dependency to an incompatible version.
+        foreach ($manifest['dependencies'] as $data) {
+            $dependency = Dependency::fromArray($data);
+            $installed = $this->packageRepository->getPackage($dependency->name);
+            if ($installed === null || !Dependency::matchesVersion($installed['version'], $dependency->version)) {
+                throw new RuntimeException("Required dependency is missing or incompatible: {$dependency->name} {$dependency->version}");
+            }
         }
 
         $packageName = $manifest['name'];
@@ -178,6 +203,23 @@ readonly class PackageInstaller implements IPackageInstaller
         }
 
         return $extractedBase;
+    }
+
+    private function installDependency(Dependency $dependency, bool $updating, array $chain): void
+    {
+        $archive = tempnam(TEMP, 'awt_dependency_');
+        if ($archive === false) throw new RuntimeException('Failed to create temporary dependency archive.');
+        $extractor = new Extractor(new ZipArchive(), new TransientStorageEntry(basename($archive), $archive), TEMP . 'dependency-');
+        try {
+            $this->download->download($dependency->url, $archive);
+            $extractor->extract();
+            if (!$this->applyExtracted($extractor->getDestination(), $updating, true, $chain, $dependency)) {
+                throw new RuntimeException("Dependency installation failed: {$dependency->name}");
+            }
+        } finally {
+            $this->cleanup($extractor->getDestination());
+            if (is_file($archive)) unlink($archive);
+        }
     }
 
     private function cleanup(string $dir): void
