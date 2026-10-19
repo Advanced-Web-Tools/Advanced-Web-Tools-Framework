@@ -94,6 +94,15 @@ readonly class PackageInstaller implements IPackageInstaller
             $packageId = (int) $installedPackage['id'];
             // Optional metadata omitted from an update keeps its installed value.
             $forDb = array_merge($installedPackage, $forDb);
+            // Keep resolved URLs until local asset registration resolves the new references.
+            foreach (['icon', 'preview_image'] as $field) {
+                $reference = $manifest[$field] ?? null;
+                if (is_string($reference) && $reference !== ''
+                    && !preg_match('~^(?:[a-z][a-z0-9+.-]*:|/)~i', $reference)
+                    && !empty($installedPackage[$field])) {
+                    $forDb[$field] = $installedPackage[$field];
+                }
+            }
             if (!$this->packageRepository->updatePackage($packageId, $forDb)) {
                 throw new RuntimeException("Failed to update package '{$packageName}'.");
             }
@@ -108,14 +117,11 @@ readonly class PackageInstaller implements IPackageInstaller
         $dataDir = $destination . DIRECTORY_SEPARATOR . 'data';
         if (is_dir($dataDir)) {
             $this->storageGenerator->setSource($dataDir);
-            $this->storageGenerator->setDestination(
-                PACKAGE_STORAGE . $packageName
-            );
-            $this->storageGenerator->setBaseUrl('/packages/' . $packageName);
+            $this->storageGenerator->setBaseUrl('/awt_packages/' . rawurlencode(basename($destination)) . '/data');
             $this->storageGenerator->setPackageId($packageId);
             $this->storageGenerator->buildStorageTree()->generate();
             $this->storageGenerator->registerItems();
-            $this->assetLinks->register($packageId, PACKAGE_STORAGE . $packageName, $manifest);
+            $this->assetLinks->register($packageId, $dataDir, $manifest);
         }
 
         $hookFile = $destination . DIRECTORY_SEPARATOR . ($updating ? 'update.php' : 'install.php');

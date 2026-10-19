@@ -12,8 +12,8 @@ interface IPackageStorageTreeGenerator
     public function registerItems(): bool;
 
     /**
-     * Generates the storage tree for the package in ``awt_data/public/packages/<name>`` directory.
-     * Also copies all files and directories from the ``data`` directory of the package to the ``awt_data/public/packages/<name>`` directory.
+     * Generates storage entries referencing files in the package's ``data/`` directory.
+     * Files remain in place; no public storage copies are created.
      * @return self
      */
     public function generate(): self;
@@ -36,13 +36,6 @@ interface IPackageStorageTreeGenerator
      * @return void
      */
     public function setSource(string $source): void;
-
-    /**
-     * Sets the destination directory (public packages directory).
-     * @param string $destination
-     * @return void
-     */
-    public function setDestination(string $destination): void;
 
     /**
      * Sets the package ID used when registering storage entries.
