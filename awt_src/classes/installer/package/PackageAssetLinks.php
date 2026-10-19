@@ -15,7 +15,7 @@ final readonly class PackageAssetLinks
         private PackageFacade $packages = new PackageFacade(),
     ) {}
 
-    public function register(int $packageId, string $storageDirectory, array $manifest): void
+    public function register(int $packageId, string $dataDirectory, array $manifest): void
     {
         $entries = $this->storage->fetchByOwnerTypeAndOwner(EOwnerType::PACKAGE, $packageId);
         $links = [];
@@ -23,7 +23,10 @@ final readonly class PackageAssetLinks
             $reference = $manifest[$field] ?? null;
             if ($reference === null || $reference === '') continue;
 
-            $path = rtrim($storageDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $reference;
+            // Manifests may reference files relative to the package or its data directory.
+            $reference = str_replace('\\', '/', $reference);
+            if (str_starts_with($reference, 'data/')) $reference = substr($reference, 5);
+            $path = rtrim($dataDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $reference;
             $matches = array_values(array_filter($entries, static fn(StorageEntry $entry): bool => $entry->getPath() === $path));
             if ($matches === [] && basename($reference) === $reference) {
                 $matches = array_values(array_filter($entries, static fn(StorageEntry $entry): bool => $entry->getName() === $reference));
