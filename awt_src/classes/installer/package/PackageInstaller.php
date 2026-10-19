@@ -11,6 +11,7 @@ use package\manifest\exceptions\ManifestReaderException;
 use package\manifest\reader\ManifestReader;
 use package\model\repository\interfaces\IPackageRepository;
 use RuntimeException;
+use vfs\resource\ResourceCache;
 
 readonly class PackageInstaller implements IPackageInstaller
 {
@@ -139,6 +140,10 @@ readonly class PackageInstaller implements IPackageInstaller
                 throw new RuntimeException('Package hook does not implement the required install/update contract.');
             }
         }
+        if ($updating && !ResourceCache::delete(basename($destination))) {
+            throw new RuntimeException("Failed to clear resource cache for package '{$packageName}'.");
+        }
+
         $e = $updating ? new \installer\events\PackageUpdatedEvent() : new PackageInstalledEvent();
         $e->setId($packageId);
         $e->setManifest($manifest);
