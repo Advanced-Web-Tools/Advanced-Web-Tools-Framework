@@ -25,6 +25,7 @@ final class WebInstaller
     private FrameworkInstallService $installer;
     private ?PDO $pdo = null;
     private bool $mutating = false;
+    private array $beforeState = [];
 
     public function __construct()
     {
@@ -83,8 +84,8 @@ final class WebInstaller
             // A durable marker survives a worker crash or a timed-out request.
             if (isset($this->state['operation'])) {
                 try {
-                    $this->rollback();
-                    $this->state['notice'] = 'The previous setup stopped before it finished. Its changes have been rolled back. You can start again.';
+                    $this->recoverOperation();
+                    $this->state['notice'] = 'The last attempt stopped before it finished. Your previous progress is saved. You can try this step again or start over.';
                 } catch (\Throwable $error) {
                     error_log('AWT interrupted setup recovery: ' . $error->getMessage());
                     $this->state['rollback_error'] = true;
@@ -138,7 +139,12 @@ final class WebInstaller
     private function post(): void
     {
         try {
-            $input = json_decode(file_get_contents('php://input'), true, 32, JSON_THROW_ON_ERROR);
+            $multipart = str_starts_with($_SERVER['CONTENT_TYPE'] ?? '', 'multipart/form-data');
+            if ($multipart && $_POST === [] && $_FILES === [] && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+                $this->respond(['error' => 'The upload exceeds the server limit. Choose a smaller ZIP or increase the PHP upload limit.', 'offer_restart' => true], 413);
+                return;
+            }
+            $input = $multipart ? $_POST : json_decode(file_get_contents('php://input'), true, 32, JSON_THROW_ON_ERROR);
             if (!is_array($input) || !is_string($input['csrf'] ?? null) || !hash_equals($_SESSION['awt_install_csrf'], $input['csrf'])) {
                 $this->respond(['error' => 'Your session could not be verified. Reload the page and try again.'], 403);
                 return;
@@ -147,9 +153,10 @@ final class WebInstaller
                 $this->respond(['error' => 'This page is out of date. Reload to continue.'], 409);
                 return;
             }
-            if (isset($this->state['rollback_error']) && ($input['action'] ?? '') !== 'restart') {
+            if (isset($this->state['rollback_error']) && !in_array($input['action'] ?? '', ['restart', 'recover'], true)) {
                 throw new \InvalidArgumentException('Rollback needs attention. Choose Start again to retry recovery.');
             }
+            $this->beforeState = $this->state;
             if (isset($this->state['configuration'])) $this->pdo = $this->installer->connectDatabase($this->state['configuration']);
             switch ($input['action'] ?? '') {
                 case 'back':
@@ -164,6 +171,9 @@ final class WebInstaller
                 case 'restart':
                     $this->rollback();
                     break;
+                case 'recover':
+                    $this->recoverOperation();
+                    break;
                 case 'packages':
                     if ($this->state['step'] !== 5) throw new \InvalidArgumentException('Complete the previous steps first.');
                     $this->installPackages($input);
@@ -174,26 +184,30 @@ final class WebInstaller
                 default:
                     throw new \InvalidArgumentException('Choose a valid installation action.');
             }
-            unset($this->state['operation']);
+            $this->finishOperation();
+            $this->mutating = false;
+            unset($this->state['notice']);
+            $result = $this->publicState();
             if ($this->state['step'] !== 6) $this->persist();
-            $this->respond($this->publicState());
+            $this->respond($result);
         } catch (\Throwable $error) {
-            if (!$this->mutating && ($error instanceof \InvalidArgumentException || $error instanceof \JsonException)) {
-                $this->respond(['error' => $error->getMessage()], 422);
-                return;
-            }
             error_log('AWT installer: ' . $error->getMessage());
-            try {
-                $this->rollback();
-                $this->persist();
-                $message = $error->getMessage() . ' Setup changes have been rolled back. You can try again.';
-            } catch (\Throwable $rollbackError) {
-                error_log('AWT installer rollback: ' . $rollbackError->getMessage());
-                $this->state['rollback_error'] = true;
-                $this->persist();
-                $message = 'Installation stopped. Recovery could not finish. Check server permissions and database access, then choose Start again to retry recovery.';
+            $status = $error instanceof \InvalidArgumentException || $error instanceof \JsonException ? 422 : 500;
+            $message = $error->getMessage();
+            if ($this->mutating) {
+                try {
+                    $this->recoverOperation();
+                    $message .= ' Changes from this attempt were rolled back. Your previous progress is saved.';
+                } catch (\Throwable $recoveryError) {
+                    error_log('AWT step recovery: ' . $recoveryError->getMessage());
+                    $this->state['rollback_error'] = true;
+                    $message = 'This step could not finish recovery. Your earlier progress is backed up. Retry recovery or choose Start again.';
+                }
             }
-            $this->respond([...$this->publicState(), 'error' => $message], 500);
+            // A failed connection does not change the active step or discard its form.
+            $this->state['notice'] = $message;
+            $this->persist();
+            $this->respond([...$this->publicState(), 'error' => $message, 'offer_restart' => true], $status);
         }
     }
 
@@ -272,21 +286,17 @@ final class WebInstaller
                     if ($admin['password'] !== $this->text($input, 'password_confirmation', false)) throw new \InvalidArgumentException('Your passwords do not match.');
                     foreach (['email', 'username', 'firstname', 'lastname'] as $key) if (strlen($admin[$key]) > 255) throw new \InvalidArgumentException('Account fields must be 255 characters or fewer.');
                     $this->beginOperation('administrator');
-                    $this->pdo->beginTransaction();
-                    try {
+                    (new \database\provider\DatabaseProvider())->transaction(function () use ($admin): void {
                         $this->pdo->exec('DELETE FROM awt_admin');
                         $this->installer->createAdmin($admin);
-                        $this->pdo->commit();
-                    } catch (\Throwable $error) {
-                        if ($this->pdo->inTransaction()) $this->pdo->rollBack();
-                        throw $error;
-                    }
+                    });
                     $this->state['admin_created'] = true;
                 }
                 $this->state['step'] = 5;
                 break;
             case 5:
-                if (!$this->state['packages_done']) throw new \InvalidArgumentException('Finish the package step before continuing.');
+                if ($this->profile()->requiresAdmin() && !$this->state['packages_done']) throw new \InvalidArgumentException('Finish the package step before continuing.');
+                $this->state['packages_done'] = true;
                 if ($this->profile()->requiresAdmin() && !$this->state['admin_created']) throw new \InvalidArgumentException('Create an administrator before continuing.');
                 $this->beginOperation('completion');
                 $this->installer->completeInstallation($this->state['configuration']);
@@ -303,13 +313,13 @@ final class WebInstaller
 
     private function settings(): array
     {
-        if ($this->pdo === null || $this->state['step'] < 3 || ($this->state['rollback_error'] ?? false)) return [];
-        return $this->pdo->query('SELECT id, name, value, value_type, category FROM awt_setting WHERE package_id = 1 ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+        if ($this->pdo === null || $this->state['step'] < 3 || ($this->state['rollback_error'] ?? false)) return $this->state['settings_cache'] ?? [];
+        return $this->state['settings_cache'] = $this->pdo->query('SELECT id, name, value, value_type, category FROM awt_setting WHERE package_id = 1 ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
     }
 
     private function installPackages(array $input): void
     {
-        if ($this->state['packages_done']) return;
+        if ($this->state['packages_done'] && $this->profile()->requiresAdmin()) return;
         $urls = $this->state['profile_packages'] ?? $this->profile()->packages();
         if (!$this->profile()->requiresAdmin()) {
             $url = $this->text($input, 'package_url');
@@ -318,17 +328,39 @@ final class WebInstaller
         foreach ($urls as $url) {
             if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($url, PHP_URL_SCHEME) ?? ''), ['http', 'https'], true)) throw new \InvalidArgumentException('Enter an HTTP or HTTPS package ZIP URL.');
         }
+        $upload = $_FILES['package_zip'] ?? null;
+        if ($upload !== null) {
+            if ($this->profile()->requiresAdmin()) throw new \InvalidArgumentException('The CMS profile uses its official package.');
+            if (!is_array($upload) || !is_int($upload['error'] ?? null) || $upload['error'] !== UPLOAD_ERR_OK) {
+                throw new \InvalidArgumentException('The ZIP could not be uploaded. Check the upload size limit and try again.');
+            }
+            if (!is_string($upload['name'] ?? null) || strtolower(pathinfo($upload['name'], PATHINFO_EXTENSION)) !== 'zip'
+                || !is_string($upload['tmp_name'] ?? null) || !is_uploaded_file($upload['tmp_name'])) {
+                throw new \InvalidArgumentException('Choose a ZIP package to upload.');
+            }
+            if (($upload['size'] ?? 0) > 536870912) throw new \InvalidArgumentException('Choose a ZIP smaller than 512 MB.');
+            if ($urls !== []) throw new \InvalidArgumentException('Add either a URL or a ZIP file, one source at a time.');
+        }
         $this->beginOperation('packages');
         if (!defined('HOSTNAME')) define('HOSTNAME', '/');
         if (!defined('WEB_NAME')) define('WEB_NAME', $this->state['configuration']['website_name']);
         $GLOBALS['settings'] = (new \setting\Settings())->fetchSettings()->initSettings();
         $GLOBALS['shared']['AWT']['Settings'] = $GLOBALS['settings'];
         $GLOBALS['eventDispatcher'] = new \event\EventDispatcher();
-        foreach ($urls as $url) {
+        $sources = array_map(static fn(string $url): array => ['url' => $url], $urls);
+        if ($upload !== null) $sources[] = ['upload' => $upload['tmp_name']];
+        foreach ($sources as $source) {
             $archive = tempnam(TEMP, 'web-package-');
             if ($archive === false) throw new \RuntimeException('Could not create a temporary package file.');
             try {
-                (new PackageDownload())->download($url, $archive);
+                if (isset($source['upload'])) {
+                    if (!move_uploaded_file($source['upload'], $archive)) throw new \RuntimeException('Could not save the uploaded ZIP.');
+                } else {
+                    (new PackageDownload())->download($source['url'], $archive);
+                }
+                $zip = new \ZipArchive();
+                if ($zip->open($archive) !== true) throw new \InvalidArgumentException('This file is not a valid ZIP archive.');
+                $zip->close();
                 $facade = new PackageFacade();
                 $installer = new PackageInstaller(
                     new Extractor(new \ZipArchive(), new TransientStorageEntry(basename($archive), $archive), TEMP . 'web-extract-'),
@@ -340,6 +372,7 @@ final class WebInstaller
             } finally { if (is_file($archive)) unlink($archive); }
         }
         $facade = new PackageFacade();
+        $this->state['packages'] = [];
         foreach ($facade->getInstalled() as $package) {
             $facade->enablePackage($package->getId());
             if ($package->getId() !== 1) $this->state['packages'][] = $package->getName();
@@ -355,14 +388,71 @@ final class WebInstaller
         unset($GLOBALS['shared']['DBEngine']['PDO']);
         if (isset($this->state['snapshot'])) InstallationRollback::remove($this->state['snapshot']['directory']);
         elseif (isset($this->state['snapshot_directory'])) InstallationRollback::remove($this->state['snapshot_directory']);
+        if (isset($this->state['checkpoint_directory'])) InstallationRollback::remove($this->state['checkpoint_directory']);
         $this->state = $this->initialState($this->state['profile']);
     }
 
     private function beginOperation(string $operation): void
     {
         $this->mutating = true;
+        if (!isset($this->state['operation'])) {
+            $this->state['operation_before'] = $this->beforeState;
+            $this->state['operation'] = $operation;
+            $this->persist();
+            if ($this->state['step'] >= 3 && $operation !== 'completion') {
+                $this->state['checkpoint_directory'] = TEMP . 'web-step-' . bin2hex(random_bytes(12));
+                $this->persist();
+                $this->state['checkpoint'] = InstallationCheckpoint::capture($this->state['checkpoint_directory'], $this->pdo);
+            }
+        }
         $this->state['operation'] = $operation;
         $this->persist();
+    }
+
+    private function finishOperation(): void
+    {
+        $directory = $this->state['checkpoint_directory'] ?? null;
+        $pending = $this->state;
+        unset($this->state['operation'], $this->state['operation_before'], $this->state['checkpoint'], $this->state['checkpoint_directory']);
+        try {
+            if ($this->state['step'] !== 6) $this->persist();
+        } catch (\Throwable $error) {
+            $this->state = $pending;
+            throw $error;
+        }
+        // Once the successful state is durable, cleanup cannot invalidate it.
+        if ($directory !== null) {
+            try { InstallationRollback::remove($directory); }
+            catch (\Throwable $error) { error_log('AWT checkpoint cleanup: ' . $error->getMessage()); }
+        }
+    }
+
+    private function recoverOperation(): void
+    {
+        $before = $this->state['operation_before'] ?? $this->beforeState;
+        $directory = $this->state['checkpoint_directory'] ?? null;
+        if (isset($this->state['checkpoint'])) {
+            $this->pdo ??= $this->installer->connectDatabase($this->state['configuration']);
+            InstallationCheckpoint::restore($this->state['checkpoint'], $this->pdo, $this->state['configuration']);
+            $this->pdo = null;
+            unset($GLOBALS['shared']['DBEngine']['PDO']);
+        } elseif (($this->state['step'] ?? 1) === 2 && ($this->state['database_armed'] ?? false)) {
+            // Migration failures restore the original empty database, keeping the database step open.
+            $this->rollback();
+        } elseif ($before === []) {
+            // Recover an installation journal created by an older installer version.
+            $step = $this->state['step'];
+            $profilePackages = $this->state['profile_packages'] ?? [];
+            $this->rollback();
+            $before = [...$this->state, 'step' => min($step, 2), 'profile_packages' => $profilePackages];
+        }
+        if ($before !== []) $this->state = $before;
+        unset($this->state['operation'], $this->state['operation_before'], $this->state['checkpoint'], $this->state['checkpoint_directory'], $this->state['rollback_error']);
+        $this->persist();
+        if ($directory !== null) {
+            try { InstallationRollback::remove($directory); }
+            catch (\Throwable $error) { error_log('AWT recovered checkpoint cleanup: ' . $error->getMessage()); }
+        }
     }
 
     private function publicState(): array
@@ -371,8 +461,7 @@ final class WebInstaller
             try { $this->pdo = $this->installer->connectDatabase($this->state['configuration']); }
             catch (\Throwable $error) {
                 error_log('AWT installer reconnect: ' . $error->getMessage());
-                $this->state['rollback_error'] = true;
-                $this->persist();
+                $this->state['connection_error'] = true;
             }
         }
         return [
