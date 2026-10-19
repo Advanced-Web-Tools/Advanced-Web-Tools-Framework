@@ -14,6 +14,7 @@ final class DatabaseDialect
             return $shared['DBEngine']['PDO']->getAttribute(PDO::ATTR_DRIVER_NAME);
         }
 
-        return strtolower(defined('DB_TYPE') && DB_TYPE !== '' ? DB_TYPE : 'mysql');
+        $type = strtolower(defined('DB_TYPE') && DB_TYPE !== '' ? DB_TYPE : 'mysql');
+        return $type === 'postgresql' ? 'pgsql' : $type;
     }
 }
