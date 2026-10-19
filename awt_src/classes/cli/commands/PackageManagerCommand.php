@@ -5,6 +5,7 @@ namespace cli\commands;
 use cli\interfaces\CLICommand;
 use installer\package\Extractor;
 use installer\package\PackageInstaller;
+use installer\package\PackageDownload;
 use installer\package\PackageMover;
 use installer\package\PackageStorageTreeGenerator;
 use package\facade\PackageFacade;
@@ -34,6 +35,7 @@ class PackageManagerCommand implements CLICommand
         return [
             "install" => "Installs a package",
             "update" => "Updates an installed package",
+            "dependencies" => "Optional: recursively install missing or incompatible dependencies from their URLs (pm install|update <path-or-url> dependencies)",
             "remove" => "Removes a package",
             "enable" => "Enables a package",
             "disable" => "Disables a package",
@@ -60,7 +62,11 @@ class PackageManagerCommand implements CLICommand
                     $this->lastResult = "No path given.\nSpecify the path or URL to a zip package.\n";
                     return;
                 }
-                $this->install($pathOrId, strtolower($action) === 'update');
+                if (count($args) > 3 || (isset($args[2]) && strtolower($args[2]) !== 'dependencies')) {
+                    $this->lastResult = 'Usage: pm install|update <path-or-url> [dependencies]';
+                    return;
+                }
+                $this->install($pathOrId, strtolower($action) === 'update', isset($args[2]));
                 break;
 
             case 'remove':
@@ -94,12 +100,13 @@ class PackageManagerCommand implements CLICommand
         }
     }
 
-    private function install(string $path, bool $updating = false): void
+    private function install(string $path, bool $updating = false, bool $installDependencies = false): void
     {
         if(str_contains($path, '"'))
             $path = str_replace('"', '', $path);
 
-        if (!str_starts_with($path, 'http') && !file_exists($path)) {
+        $remote = in_array(strtolower(parse_url($path, PHP_URL_SCHEME) ?: ''), ['http', 'https'], true);
+        if (!$remote && !file_exists($path)) {
             $this->lastResult = "File not found: {$path}";
             return;
         }
@@ -111,30 +118,8 @@ class PackageManagerCommand implements CLICommand
         }
 
         try {
-            if (str_starts_with($path, 'http')) {
-                $fp = fopen($tmpFile, 'w');
-                if (!$fp) {
-                    $this->lastResult = "Failed to create temporary file.";
-                    return;
-                }
-
-                $ch = curl_init($path);
-                curl_setopt($ch, CURLOPT_FILE, $fp);
-                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-                curl_setopt($ch, CURLOPT_FAILONERROR, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-
-                if (!curl_exec($ch)) {
-                    $error = curl_error($ch);
-                    curl_close($ch);
-                    fclose($fp);
-                    unlink($tmpFile);
-                    $this->lastResult = "Failed to download package: {$error}";
-                    return;
-                }
-
-                curl_close($ch);
-                fclose($fp);
+            if ($remote) {
+                (new PackageDownload())->download($path, $tmpFile);
             } else {
                 if (!copy($path, $tmpFile)) {
                     throw new \RuntimeException("Failed to copy package archive.");
@@ -149,9 +134,9 @@ class PackageManagerCommand implements CLICommand
                 $facade->getRepository()
             );
             if ($updating) {
-                if (!$installer->update()) throw new \RuntimeException('Package update failed.');
+                if (!$installer->update($installDependencies)) throw new \RuntimeException('Package update failed.');
             } else {
-                $installer->execute();
+                if (!$installer->install($installDependencies)) throw new \RuntimeException('Package installation failed.');
             }
 
             $this->lastResult = $updating ? "Package updated successfully." : "Package installed successfully.";
