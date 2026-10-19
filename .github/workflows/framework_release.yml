@@ -2,6 +2,17 @@ name: Framework release
 
 on:
   workflow_dispatch:
+    inputs:
+      version_source:
+        description: Release version source (increments use the highest version tag)
+        required: true
+        default: config
+        type: choice
+        options:
+          - config
+          - major
+          - minor
+          - patch
 
 permissions:
   contents: write
@@ -20,31 +31,45 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calculate next version
+      - name: Determine release version
         id: version
+        env:
+          VERSION_SOURCE: ${{ inputs.version_source }}
         shell: python
         run: |
           import os
           import re
           import subprocess
+          from pathlib import Path
 
-          tags = subprocess.check_output(
-              ["git", "tag", "--list"],
-              text=True
-          ).splitlines()
-
-          versions = []
-
-          for tag in tags:
-              match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", tag)
-              if match:
-                  versions.append(tuple(map(int, match.groups())))
-
-          if versions:
-              major, minor, patch = max(versions)
-              version = f"{major}.{minor}.{patch + 1}"
+          source = os.environ["VERSION_SOURCE"]
+          if source == "config":
+              config = Path("awt_data/config/awt_config.php").read_text()
+              match = re.search(
+                  r"^\s*const\s+AWT_VERSION\s*=\s*(['\"])(\d+\.\d+\.\d+)\1\s*;",
+                  config,
+                  re.MULTILINE,
+              )
+              if not match:
+                  raise SystemExit("Missing or invalid AWT_VERSION in awt_data/config/awt_config.php")
+              version = match.group(2)
+          elif source in {"major", "minor", "patch"}:
+              tags = subprocess.check_output(["git", "tag", "--list"], text=True).splitlines()
+              versions = []
+              for tag in tags:
+                  match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", tag)
+                  if match:
+                      versions.append(tuple(map(int, match.groups())))
+              major, minor, patch = max(versions, default=(0, 0, 0))
+              if source == "major":
+                  major, minor, patch = major + 1, 0, 0
+              elif source == "minor":
+                  minor, patch = minor + 1, 0
+              else:
+                  patch += 1
+              version = f"{major}.{minor}.{patch}"
           else:
-              version = "1.0.0"
+              raise SystemExit(f"Invalid version source: {source}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"tag={version}\n")
@@ -62,8 +87,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ steps.version.outputs.tag }}
         run: |
-          gh release create "$VERSION" \
-            "$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" \
-            --target "$GITHUB_SHA" \
-            --title "AWT Framework $VERSION" \
-            --generate-notes
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            gh release upload "$VERSION" \
+              "$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" \
+              --clobber
+          else
+            gh release create "$VERSION" \
+              "$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" \
+              --target "$GITHUB_SHA" \
+              --title "AWT Framework $VERSION" \
+              --generate-notes
+          fi

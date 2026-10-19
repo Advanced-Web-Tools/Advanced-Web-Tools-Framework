@@ -131,14 +131,20 @@ class CLIHandler
         }
 
 
-        $args = "";
+        echo $this->commands[$command]->getHelp() . PHP_EOL;
 
-        foreach ($this->commands[$command]->getArguments() as $arg => $value) {
-            $args .= "\n{$arg}: {$value}";
+        $arguments = $this->commands[$command]->getArguments();
+        if ($arguments === []) {
+            return;
         }
 
-
-        echo $this->commands[$command]->getHelp() . PHP_EOL . "Arguments: {$args} ". PHP_EOL;
+        $width = max(array_map('strlen', array_keys($arguments)));
+        $indent = str_repeat(' ', $width + 4);
+        echo PHP_EOL . 'Arguments:' . PHP_EOL;
+        foreach ($arguments as $arg => $description) {
+            $description = wordwrap($description, max(40, 100 - strlen($indent)), PHP_EOL . $indent);
+            echo '  ' . str_pad($arg, $width) . '  ' . $description . PHP_EOL;
+        }
     }
 
 

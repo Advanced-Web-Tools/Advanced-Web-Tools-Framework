@@ -32,22 +32,38 @@ class InstallCommand implements CLICommand
 
     public function getHelp(): string
     {
-        return 'Installation of the framework is available only when DB_TYPE is empty. Supply named arguments in any order.'
-            . PHP_EOL . 'Use key:"value"; quote values containing spaces. type and name are required; db is required for MySQL and PostgreSQL.'
-            . PHP_EOL . 'Example: install db:"awt" type:"mysql" username:"root" name:"My Website"'
-            . PHP_EOL . 'SQLite: install type:"sqlite" name:"My Website" (creates awt_db.sqlite in the project root).';
+        return implode(PHP_EOL, [
+            'Install the framework and configure its database.',
+            '',
+            'Usage:',
+            '  php awt install type:"<database type>" name:"<website name>" [key:"value" ...]',
+            '  In the awt> prompt, omit "php awt".',
+            '',
+            'Examples:',
+            '  SQLite:',
+            '    install type:"sqlite" name:"My Website"',
+            '  MySQL:',
+            '    install type:"mysql" name:"My Website" db:"awt" username:"root"',
+            '  PostgreSQL:',
+            '    install type:"postgresql" name:"My Website" db:"awt" username:"postgres" password:"secret"',
+            '',
+            'Pass arguments as key:"value" in any order. Quote values containing spaces.',
+            'MySQL and PostgreSQL require an existing database and database username.',
+            'SQLite creates awt_db.sqlite in the project root.',
+            'Installation is available only before a database has been configured.',
+        ]);
     }
 
     public function getArguments(): array
     {
         return [
-            'type:"type"' => 'Required. Database type: mysql, postgresql, sqlite. Alias: db_type.',
-            'db:"name"' => 'Required for MySQL and PostgreSQL. SQLite always uses awt_db.sqlite in the project root.',
-            'host:"host"' => "Optional. Database host; defaults to 'localhost'.",
-            'username:"user"' => 'Required for MySQL and PostgreSQL; optional for SQLite.',
-            'password:"password"' => 'Optional. Database password; defaults to empty.',
+            'type:"database type"' => 'Required. mysql, postgresql, or sqlite. Alias: db_type.',
             'name:"website name"' => 'Required. Website name.',
-            'path:"/"' => "Optional. Host path; defaults to '/'.",
+            'db:"database name"' => 'Required for MySQL / PostgreSQL. Ignored for SQLite.',
+            'username:"user"' => 'Required for MySQL / PostgreSQL. Unused for SQLite.',
+            'password:"password"' => 'Optional. Database password. Default: empty. Unused for SQLite.',
+            'host:"hostname"' => 'Optional. Database host. Default: localhost. Unused for SQLite.',
+            'path:"/"' => 'Optional. Website URL path, such as / or /my-site/. Default: /.',
         ];
     }
 
