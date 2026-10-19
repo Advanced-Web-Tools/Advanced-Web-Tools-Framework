@@ -19,7 +19,7 @@ class FrameworkInstallService
 
     public function assertAvailable(): void
     {
-        if (DB_TYPE !== '') {
+        if (DB_TYPE !== '' || file_exists(CONFIG . 'awt_db.php')) {
             throw new \RuntimeException('Database is already set. Installation can not be proceeded for security reasons.');
         }
     }
@@ -61,16 +61,34 @@ class FrameworkInstallService
     /** @param array<string, string> $configuration */
     public function install(array $configuration): void
     {
+        $this->prepareDatabase($configuration);
+        $this->completeInstallation($configuration);
+    }
+
+    /** Run migrations without exposing an unfinished installation to normal requests. */
+    public function prepareDatabase(array $configuration): void
+    {
         $configuration = $this->validateConfiguration($configuration);
         $this->name = $configuration['website_name'];
         $this->hostpath = $configuration['host_path'];
-
-        if (!$this->testDbConfig($configuration['host'], $configuration['database_name'], $configuration['username'], $configuration['password'], $configuration['database_type'])) {
-            throw new \RuntimeException('Database configuration is invalid.');
-        }
+        $this->connectDatabase($configuration);
         $this->migrate();
+    }
 
+    public function completeInstallation(array $configuration): void
+    {
+        $configuration = $this->validateConfiguration($configuration);
         $this->writeDbConfig($configuration['host'], $configuration['database_name'], $configuration['username'], $configuration['password'], $configuration['database_type']);
+    }
+
+    /** Reconnect to a database staged by an earlier installer request. */
+    public function connectDatabase(array $configuration): PDO
+    {
+        InstallationRequirements::assertSatisfied($configuration['database_type']);
+        if (!$this->testDbConfig($configuration['host'], $configuration['database_name'], $configuration['username'], $configuration['password'], $configuration['database_type'])) {
+            throw new \RuntimeException('Could not connect to the database. Check its name, host, and credentials.');
+        }
+        return $GLOBALS['shared']['DBEngine']['PDO'];
     }
 
     /** @param array{email: string, password: string, username: string, firstname: string, lastname: string} $data */
@@ -105,8 +123,24 @@ class FrameworkInstallService
             'const DB_TYPE = '     . $q($type) . ';',
         ];
 
-        if (file_put_contents($file, implode(PHP_EOL, $lines) . PHP_EOL) === false) {
+        // Publish a complete file atomically, without replacing another installation.
+        $temporary = CONFIG . '.awt-db-' . bin2hex(random_bytes(12)) . '.php';
+        $handle = @fopen($temporary, 'x');
+        if ($handle === false) {
             throw new \RuntimeException('Failed to write database configuration.');
+        }
+        $contents = implode(PHP_EOL, $lines) . PHP_EOL;
+        try {
+            chmod($temporary, 0600);
+            if (fwrite($handle, $contents) !== strlen($contents)) {
+                throw new \RuntimeException('Failed to write database configuration.');
+            }
+            fclose($handle);
+            $handle = null;
+            if (!@link($temporary, $file)) throw new \RuntimeException('Failed to publish database configuration. It may already exist.');
+        } finally {
+            if (is_resource($handle)) fclose($handle);
+            if (is_file($temporary)) unlink($temporary);
         }
     }
 
