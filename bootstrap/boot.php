@@ -10,7 +10,13 @@ require_once CONFIG . 'awt_config.php';
 
 if (DB_TYPE === '') {
     if (PHP_SAPI !== 'cli') {
-        exit('Framework is not installed. Run "php awt" in your terminal, then enter "install" and follow the instructions.');
+        if (file_exists(CONFIG . 'awt_db.php')) {
+            http_response_code(503);
+            exit('The database configuration is incomplete. Review awt_db.php before continuing.');
+        }
+        require_once FUNCTIONS . 'awt_autoLoader.fun.php';
+        (new \installer\web\WebInstaller())->handle();
+        return;
     }
 
     require_once FUNCTIONS . 'awt_autoLoader.fun.php';

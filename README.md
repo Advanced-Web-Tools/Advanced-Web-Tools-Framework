@@ -85,9 +85,19 @@ AWT requires **PHP 8.3 or newer**.
 
 1. Download AWT from the [releases page](https://github.com/Advanced-Web-Tools/Advanced-Web-Tools-Framework/releases).
 2. Configure the framework in `awt_data/config/awt_config.php`.
-3. Configure your database connection in `awt_data/config/awt_db.php`.
-4. Point your web server’s document root to `public`.
+3. Point your web server’s document root to `public`.
+4. Open `/` in your browser to run the installer, or use `php awt` and `help install` for CLI setup.
 5. Build your application inside `awt_packages`, or develop it as a separate project with the [AWT Helper plugin for PhpStorm](https://github.com/Advanced-Web-Tools/AWT-Helper-PhpStorm).
+
+The web installer opens only when `DB_TYPE` is empty and `awt_data/config/awt_db.php` does not exist. It checks PHP extensions, offers SQLite (default), MySQL, or PostgreSQL, and guides you through website settings, an administrator account, and packages. MySQL and PostgreSQL require an existing empty database. SQLite is created automatically.
+
+Installation profiles implement `installer\profiles\IProfile`. CMS requires an administrator and installs its package dependencies automatically. Framework setup can skip the administrator and optionally install a package from a URL. Every package installed during setup is enabled.
+
+The database configuration is published only after setup completes. Failed setup restores the empty database and snapshots of package files, public storage, and framework caches. Continue in the same browser to resume setup; **Start again** rolls back pending setup. Package hooks should keep their changes within these managed locations; external services and files outside them cannot be restored by the installer.
+
+> **Before making your website public:** The web installer does not require a separate setup password. Anyone who reaches an unfinished installation could start setup and take control of the website. Complete installation locally, or restrict access through your hosting provider until setup finishes. The installer closes automatically once `awt_db.php` has been created.
+
+Use HTTPS when installing on a remote server, and install packages only from sources you trust. Package installation can execute PHP code with the web server's permissions. The current Framework installer accepts custom package URLs; session locking and CSRF protection do not verify server ownership or make an untrusted package safe.
 
 ### Install packages through the CLI
 
