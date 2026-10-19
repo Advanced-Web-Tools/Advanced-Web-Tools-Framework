@@ -72,7 +72,7 @@ class QueryBuilder
     /** Set the SELECT … FROM clause. */
     public function select(array $columns = ['*']): self
     {
-        $this->selectClause = 'SELECT ' . implode(', ', $columns) . " FROM {$this->table}";
+        $this->selectClause = 'SELECT ' . implode(', ', array_map($this->selectColumn(...), $columns)) . ' FROM ' . $this->identifier($this->table);
         return $this;
     }
 
@@ -129,10 +129,10 @@ class QueryBuilder
             $this->assertIdentifier((string) $column, true, true);
             $this->conditions[$column] = $value;
             if ($value === null && in_array($operator, ['=', '!='], true)) {
-                $clauses[] = $column . ($operator === '=' ? ' IS NULL' : ' IS NOT NULL');
+                $clauses[] = $this->identifier((string) $column) . ($operator === '=' ? ' IS NULL' : ' IS NOT NULL');
             } else {
                 $placeholder = $this->placeholder();
-                $clauses[] = "{$column} {$operator} {$placeholder}";
+                $clauses[] = $this->identifier((string) $column) . " {$operator} {$placeholder}";
                 $this->bindings[$placeholder] = $value;
             }
         }
@@ -140,6 +140,22 @@ class QueryBuilder
     }
 
     private function placeholder(): string { return ':p' . ++$this->parameterIndex; }
+
+    /** Preserve case-sensitive framework columns such as ownerId on PostgreSQL. */
+    private function identifier(string $name): string
+    {
+        if ($this->dialect !== 'pgsql' || ctype_digit($name)) return $name;
+        return implode('.', array_map(static fn(string $part): string => $part === '*' ? '*' : '"' . trim($part, '`') . '"', explode('.', $name)));
+    }
+
+    private function selectColumn(string $column): string
+    {
+        if ($this->dialect !== 'pgsql') return $column;
+        if (preg_match('/^([A-Za-z_][A-Za-z0-9_.]*|\*)(?:\s+AS\s+([A-Za-z_][A-Za-z0-9_]*))?$/iD', $column, $match)) {
+            return $this->identifier($match[1]) . (isset($match[2]) ? ' AS ' . $this->identifier($match[2]) : '');
+        }
+        return $column;
+    }
 
     private function assertIdentifier(string $identifier, bool $qualified = true, bool $numeric = false): void
     {
@@ -169,7 +185,7 @@ class QueryBuilder
     {
         $this->assertIdentifier($column);
         $direction              = strtoupper($direction) === 'DESC' ? 'DESC' : 'ASC';
-        $this->orderByClauses[] = "{$column} {$direction}";
+        $this->orderByClauses[] = $this->identifier($column) . " {$direction}";
         return $this;
     }
 
@@ -193,8 +209,8 @@ class QueryBuilder
                 $sql               .= ' OFFSET :offset';
                 $bindings[':offset'] = $offset;
             }
-        } elseif ($offset !== null && $this->dialect === 'sqlite') {
-            $sql .= ' LIMIT -1 OFFSET :offset';
+        } elseif ($offset !== null && in_array($this->dialect, ['sqlite', 'pgsql'], true)) {
+            $sql .= $this->dialect === 'pgsql' ? ' OFFSET :offset' : ' LIMIT -1 OFFSET :offset';
             $bindings[':offset'] = $offset;
         }
 
@@ -210,8 +226,8 @@ class QueryBuilder
 
         $sql = sprintf(
             'INSERT INTO %s (%s) VALUES (%s)',
-            $this->table,
-            implode(', ', $this->insertColumns),
+            $this->identifier($this->table),
+            implode(', ', array_map($this->identifier(...), $this->insertColumns)),
             implode(', ', array_keys($this->insertBindings))
         );
 
@@ -233,6 +249,7 @@ class QueryBuilder
 
         foreach ($data as $column => $value) {
             $this->assertIdentifier((string) $column, false);
+            $column = $this->identifier((string) $column);
             if ($value instanceof SqlExpression || $value === 'DEFAULT') {
                 $expression = $value instanceof SqlExpression ? $value->sql : 'DEFAULT';
                 if ($this->dialect === 'sqlite' && strtoupper(trim($expression)) === 'DEFAULT') {

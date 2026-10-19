@@ -147,8 +147,9 @@ class TableWizard
         }
 
         $allClauses = implode(",\n    ", array_merge($columnClauses, $foreignKeyClauses));
-        $options = $this->dialect === 'sqlite' ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci';
-        $sql = "CREATE TABLE `{$tableName}` (\n    {$allClauses}\n){$options};";
+        $options = $this->dialect === 'mysql' ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci' : '';
+        $quote = $this->dialect === 'pgsql' ? '"' : '`';
+        $sql = "CREATE TABLE {$quote}{$tableName}{$quote} (\n    {$allClauses}\n){$options};";
 
         $result = $this->schema->executeDDL($sql);
 

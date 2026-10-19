@@ -2,8 +2,6 @@
 
 namespace database\provider;
 
-require_once CONFIG . '/awt_db.php';
-
 use database\exceptions\ProviderException;
 use PDO;
 use PDOException;
@@ -37,7 +35,8 @@ class DatabaseProvider implements \database\interface\ITransactionalProvider
         global $shared;
         if (!isset($shared['DBEngine']['PDO'])) {
             $sqlite = strtolower(DB_TYPE) === 'sqlite';
-            $dsn = $sqlite ? 'sqlite:' . DB_NAME : DB_TYPE . ':host=' . DB_HOSTNAME . ';dbname=' . DB_NAME;
+            $driver = strtolower(DB_TYPE) === 'postgresql' ? 'pgsql' : DB_TYPE;
+            $dsn = $sqlite ? 'sqlite:' . DB_NAME : $driver . ':host=' . DB_HOSTNAME . ';dbname=' . DB_NAME;
             try {
                 $pdo = new PDO($dsn, $sqlite ? null : DB_USERNAME, $sqlite ? null : DB_PASSWORD, [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -63,6 +62,8 @@ class DatabaseProvider implements \database\interface\ITransactionalProvider
         $stmt = $this->connection()->prepare($sql);
 
         foreach ($bindings as $placeholder => $value) {
+            // Framework flags are integer columns, including on PostgreSQL.
+            if (is_bool($value) && $this->connection()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql') $value = (int) $value;
             $type = match (true) {
                 $value === null => PDO::PARAM_NULL,
                 is_bool($value) => PDO::PARAM_BOOL,
