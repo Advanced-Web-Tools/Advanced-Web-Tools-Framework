@@ -1,6 +1,6 @@
 <?php
-const AWT_VERSION = "27.1.2";
-const DEBUG = true;
+const AWT_VERSION = "27.1.3";
+const DEBUG = false;
 const SHOW_SQL_CONNECTIONS_CALLS = false;
 
 /**
@@ -9,7 +9,7 @@ const SHOW_SQL_CONNECTIONS_CALLS = false;
  * This setting is intended for development purposes only.
  * It MUST remain FALSE in production environments to ensure security.
  *
- * In order for this to work, please also set `DEBUG = true`.
+ * In order for this to work please also set `DEBUG = true;`.
  */
 const REMOTE_INSTALL_FOR_DEVS = false;
 const DEV_SECRET = "12345678";
