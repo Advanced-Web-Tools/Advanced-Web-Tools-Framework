@@ -59,11 +59,17 @@ class DatabaseProvider implements \database\interface\ITransactionalProvider
      */
     public function execute(string $sql, array $bindings = []): PDOStatement
     {
-        $stmt = $this->connection()->prepare($sql);
+        $connection = $this->connection();
+        $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+        if ($driver === 'sqlite') {
+            // Released package hooks use MySQL's duplicate-tolerant insert syntax.
+            $sql = preg_replace('/\A(\s*)INSERT\s+IGNORE\s+INTO\b/i', '$1INSERT OR IGNORE INTO', $sql);
+        }
+        $stmt = $connection->prepare($sql);
 
         foreach ($bindings as $placeholder => $value) {
             // Framework flags are integer columns, including on PostgreSQL.
-            if (is_bool($value) && $this->connection()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql') $value = (int) $value;
+            if (is_bool($value) && $driver === 'pgsql') $value = (int) $value;
             $type = match (true) {
                 $value === null => PDO::PARAM_NULL,
                 is_bool($value) => PDO::PARAM_BOOL,
