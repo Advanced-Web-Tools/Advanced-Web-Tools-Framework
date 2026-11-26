@@ -81,4 +81,19 @@ abstract class RuntimeAPI implements IRuntimeAPI, IRuntimeBaseCapabilities
             $this->CLIHandler->addCommand($command);
         }
     }
+
+    /** @param class-string<\automation\interfaces\AutomationJob> $className */
+    public function addAutomationJob(string $className): void
+    {
+        if (PHP_SAPI !== 'cli') {
+            return;
+        }
+        if (!in_array(ERuntimeFlags::AUTOMATION_PROVIDER, $this->runtime->getFlags(), true)) {
+            throw new \LogicException('Registering automation jobs requires the AUTOMATION_PROVIDER runtime flag.');
+        }
+        if (!isset($this->CLIHandler)) {
+            throw new \LogicException('CLI handler is unavailable.');
+        }
+        $this->CLIHandler->getAutomationHandler()->addJob($this->name, $className);
+    }
 }

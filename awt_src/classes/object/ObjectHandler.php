@@ -18,6 +18,16 @@ class ObjectHandler
     public static function createObjectFromFile(string $filename): ?object
     {
         $class = self::classFromFile($filename);
-        return $class === null ? null : new $class();
+        return $class === null ? null : self::createObject($class);
+    }
+
+    /**
+     * @template T of object
+     * @param class-string<T> $className
+     * @return T
+     */
+    public static function createObject(string $className): object
+    {
+        return new $className();
     }
 }

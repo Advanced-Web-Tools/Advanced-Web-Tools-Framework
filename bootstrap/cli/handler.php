@@ -5,6 +5,7 @@ global $routerManager;
 global $loader;
 
 use cli\CLIHandler;
+use cli\commands\AutomationCommand;
 use cli\commands\CacheCommand;
 use cli\commands\ClearCommand;
 use cli\commands\HelloCommand;
@@ -34,8 +35,20 @@ if (DB_TYPE !== '') {
     $rc->addRoutes($routerManager->getRoutes());
     $cliHandler->addCommand($rc);
 }
+
+$automationCommand = new AutomationCommand(
+    DB_TYPE === '' ? null : $loader->CLIHandler->getAutomationHandler(),
+    FRAMEWORK_STORAGE . 'automation.lock',
+);
+$cliHandler->addCommand($automationCommand);
+
 $argv = $_SERVER['argv'] ?? [];
 array_shift($argv);
+if (($argv[0] ?? null) === $automationCommand->getCommand()) {
+    $cliHandler->execute(array_shift($argv), $argv);
+    exit($automationCommand->getExitCode());
+}
+
 $firstCommand = $argv ? ['cmd' => array_shift($argv), 'args' => $argv] : null;
 
 while (true) {

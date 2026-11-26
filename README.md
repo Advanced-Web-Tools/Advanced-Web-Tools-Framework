@@ -128,9 +128,6 @@ AWT is actively evolving. Current areas of development include:
 - Expanded documentation and developer guides
 - Additional built-in CLI commands
 - Security improvements and automated testing
-- Remote package installation
-- Improved error handling and structured logging
-- Route and controller caching
 
 Follow [releases](https://github.com/Advanced-Web-Tools/Advanced-Web-Tools-Framework/releases) for updates, or use [issues](https://github.com/Advanced-Web-Tools/Advanced-Web-Tools-Framework/issues) to report problems and suggest improvements.
 
