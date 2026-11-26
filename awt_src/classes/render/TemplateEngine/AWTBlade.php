@@ -9,6 +9,7 @@ use router\interface\IMethodPolicy;
 use router\interface\IRequestProvider;
 use router\security\Csrf;
 use vfs\resource\exceptions\ResourceException;
+use vfs\resource\PublicResource;
 use vfs\resource\Resource;
 
 class AWTBlade extends BladeOne
@@ -286,7 +287,22 @@ class AWTBlade extends BladeOne
             }
         }
 
-        return self::e(HOSTNAME . ($this->assetDict[0] ?? '') . '/' . $reference);
+        $reference = ltrim($reference, '/');
+        $base = trim($this->assetDict[0] ?? '', '/');
+        $host = rtrim(HOSTNAME, '/');
+
+        if ($package !== '' && $package !== $this->packageName) {
+            // Layouts and includes can belong to a different package from the controller's view.
+            $path = rawurldecode(substr($reference, 0, strcspn($reference, '?#')));
+            foreach (['views/assets/', 'assets/', ''] as $directory) {
+                $file = PACKAGES . $package . '/' . $directory . $path;
+                if (!str_contains($path, "\0") && PublicResource::allows($package, $file)) {
+                    return self::e($host . '/awt_packages/' . rawurlencode($package) . '/' . $directory . $reference);
+                }
+            }
+        }
+
+        return self::e($host . '/' . ($base === '' ? '' : $base . '/') . $reference);
     }
 
     protected function compileData($expression): string
