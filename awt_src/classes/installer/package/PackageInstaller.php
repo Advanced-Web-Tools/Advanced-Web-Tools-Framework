@@ -47,11 +47,14 @@ readonly class PackageInstaller implements IPackageInstaller
 
     private function applyExtracted(string $extractedBase, bool $updating, bool $installDependencies, array $chain = [], ?Dependency $expected = null): bool
     {
-        global $eventDispatcher;
         $packageDir = is_file($extractedBase . DIRECTORY_SEPARATOR . 'manifest.json')
             ? $extractedBase : $this->findPackageDir($extractedBase);
 
         $manifestPath = $packageDir . DIRECTORY_SEPARATOR . 'manifest.json';
+        $delta = file_exists($packageDir . '/' . PackageDelta::METADATA);
+        if ($delta && !$updating) {
+            throw new RuntimeException('A package delta requires an installed base release. Use pm update.');
+        }
 
         $manifest = ManifestReader::readFile($manifestPath);
         if ($expected !== null && ($manifest['name'] !== $expected->name
@@ -73,12 +76,9 @@ readonly class PackageInstaller implements IPackageInstaller
         if (!$updating && $installedPackage !== null) {
             throw new RuntimeException("Package is already installed: {$manifest['name']}. Use the update workflow.");
         }
-        $verifyManifest  = new VerifyManifest($manifest);
-        $verifyStructure = new VerifyStructure($packageDir);
-        $preparer        = new PrepareInstallation($verifyManifest, $verifyStructure);
-
-        if (!$preparer->prepare()->verify()) {
-            return false;
+        if (!$delta) {
+            $preparer = new PrepareInstallation(new VerifyManifest($manifest), new VerifyStructure($packageDir));
+            if (!$preparer->prepare()->verify()) return false;
         }
 
         foreach ($manifest['dependencies'] as $data) {
@@ -102,42 +102,57 @@ readonly class PackageInstaller implements IPackageInstaller
             }
         }
 
-        $packageName = $manifest['name'];
-        $destination = rtrim(PACKAGES, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace(' ', '', $packageName);
-
-        if (!is_dir($destination) && !mkdir($destination, 0755, true) && !is_dir($destination)) {
-            throw new RuntimeException("Failed to create package directory: {$destination}");
-        }
-
-        $this->mover->setSource($packageDir);
-        $this->mover->setDestination($destination);
-        $this->mover->move();
-
-        $manifestReader = new ManifestReader($packageName);
-        $forDb = $manifestReader->getManifest();
-        // Dependencies are persisted; startup never needs to reread the manifest.
-        if ($updating) {
-            $packageId = (int) $installedPackage['id'];
-            // Optional metadata omitted from an update keeps its installed value.
-            $forDb = array_merge($installedPackage, $forDb);
-            // Keep resolved URLs until local asset registration resolves the new references.
-            foreach (['icon', 'preview_image'] as $field) {
-                $reference = $manifest[$field] ?? null;
-                if (is_string($reference) && $reference !== ''
-                    && !preg_match('~^(?:[a-z][a-z0-9+.-]*:|/)~i', $reference)
-                    && !empty($installedPackage[$field])) {
-                    $forDb[$field] = $installedPackage[$field];
-                }
+        // Resolve dependencies before taking a per-package lock, so dependency updates can take their own locks.
+        $directoryName = str_replace(' ', '', $manifest['name']);
+        $lockPath = FRAMEWORK_STORAGE . 'package-' . hash('sha256', strtolower($directoryName)) . '.lock';
+        $lock = @fopen($lockPath, 'c') ?: @fopen($lockPath, 'r');
+        if ($lock === false) throw new RuntimeException('Could not open the package update lock.');
+        try {
+            if (!flock($lock, LOCK_EX)) throw new RuntimeException('Could not acquire the package update lock.');
+            $current = $this->packageRepository->getPackage($manifest['name']);
+            if (($current['id'] ?? null) !== ($installedPackage['id'] ?? null)
+                || ($current['version'] ?? null) !== ($installedPackage['version'] ?? null)) {
+                throw new RuntimeException('The installed package changed during preparation. Retry the update.');
             }
-            if (!$this->packageRepository->updatePackage($packageId, $forDb)) {
-                throw new RuntimeException("Failed to update package '{$packageName}'.");
+            return $this->publish($packageDir, PACKAGES . $directoryName, $manifest, $current, $delta);
+        } finally {
+            fclose($lock);
+        }
+    }
+
+    private function publish(string $packageDir, string $destination, array $manifest, ?array $installed, bool $delta): bool
+    {
+        global $eventDispatcher;
+        $packageName = $manifest['name'];
+        $updating = $installed !== null;
+        if ($delta) {
+            $stage = PACKAGES . '.delta@' . bin2hex(random_bytes(16));
+            $backup = $stage . '-backup';
+            $registered = false;
+            try {
+                PackageDelta::stage($packageDir, $destination, $installed['version'], $manifest, $stage);
+                if (!rename($destination, $backup)) throw new RuntimeException('Could not back up the installed package.');
+                if (!rename($stage, $destination)) throw new RuntimeException('Could not activate the staged package.');
+                $packageId = $this->register($manifest, $installed);
+                $registered = true;
+            } finally {
+                if (is_dir($backup)) {
+                    if ($registered) {
+                        $this->cleanup($backup);
+                    } elseif ((is_dir($destination) && !rename($destination, $stage)) || !rename($backup, $destination)) {
+                        throw new RuntimeException("Could not restore the previous package directory from {$backup}.");
+                    }
+                }
+                $this->cleanup($stage);
             }
         } else {
-            $packageId = $this->packageRepository->newPackage($forDb);
-        }
-
-        if ($packageId === null) {
-            throw new RuntimeException("Failed to register package '{$packageName}' in the database.");
+            if (!is_dir($destination) && !mkdir($destination, 0755, true) && !is_dir($destination)) {
+                throw new RuntimeException("Failed to create package directory: {$destination}");
+            }
+            $this->mover->setSource($packageDir);
+            $this->mover->setDestination($destination);
+            $this->mover->move();
+            $packageId = $this->register($manifest, $installed);
         }
 
         $dataDir = $destination . DIRECTORY_SEPARATOR . 'data';
@@ -175,6 +190,31 @@ readonly class PackageInstaller implements IPackageInstaller
         if ($eventDispatcher instanceof \event\EventDispatcher) $eventDispatcher->dispatch($e);
 
         return true;
+    }
+
+    private function register(array $manifest, ?array $installed): int
+    {
+        $packageName = $manifest['name'];
+        $forDb = (new ManifestReader($packageName))->getManifest();
+        if ($installed === null) {
+            return $this->packageRepository->newPackage($forDb)
+                ?? throw new RuntimeException("Failed to register package '{$packageName}' in the database.");
+        }
+
+        // Preserve omitted fields and keep resolved asset URLs until registration resolves the new references.
+        $forDb = array_merge($installed, $forDb);
+        foreach (['icon', 'preview_image'] as $field) {
+            $reference = $manifest[$field] ?? null;
+            if (is_string($reference) && $reference !== ''
+                && !preg_match('~^(?:[a-z][a-z0-9+.-]*:|/)~i', $reference) && !empty($installed[$field])) {
+                $forDb[$field] = $installed[$field];
+            }
+        }
+        $packageId = (int) $installed['id'];
+        if (!$this->packageRepository->updatePackage($packageId, $forDb)) {
+            throw new RuntimeException("Failed to update package '{$packageName}'.");
+        }
+        return $packageId;
     }
 
     /**
