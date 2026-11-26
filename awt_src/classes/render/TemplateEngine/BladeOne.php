@@ -199,7 +199,7 @@ class BladeOne
     /** @var array Array of opening and closing tags for raw echos. */
     protected array $rawTags = ['{!!', '!!}'];
     /** @var array Array of opening and closing tags for regular echos. */
-    protected array $contentTags = ['{{', '}}', '%%'];
+    protected array $contentTags = ['{{', '}}'];
     protected int $commentMode = 0;
     /** @var array Array of opening and closing tags for escaped echos. */
     protected array $escapedTags = ['{{{', '}}}'];
@@ -236,8 +236,6 @@ class BladeOne
     protected int $switchCount = 0;
     /** @var bool Indicates if the switch is recently open */
     protected bool $firstCaseInSwitch = true;
-
-    protected string $packageName = "";
     //</editor-fold>
     //<editor-fold desc="constructor">
     /**
@@ -260,10 +258,7 @@ class BladeOne
      *                                  **1** comments are generated as html code<br>
      *                                  **2** comments are ignored (no code is generated)<br>
      */
-    public function __construct($templatePath = null, $compiledPath = null, $mode = 0, $commentMode = 0,
-        private readonly \router\interface\ICsrfTokenManager $csrfTokens = new \router\security\Csrf(),
-        private readonly \router\interface\IRequestProvider $requests = new \router\http\GlobalsRequestProvider(),
-        private readonly \router\interface\IMethodPolicy $httpMethods = new \router\http\HttpMethod())
+    public function __construct($templatePath = null, $compiledPath = null, $mode = 0, $commentMode = 0)
     {
         if ($templatePath === null) {
             $templatePath = \getcwd() . '/views';
@@ -672,13 +667,6 @@ class BladeOne
         if (!$bool) {
             $this->setMode(self::MODE_SLOW);
         }
-        return $this;
-    }
-
-
-    public function setPackageName(string $packageName): BladeOne
-    {
-        $this->packageName = $packageName;
         return $this;
     }
 
@@ -1438,9 +1426,7 @@ class BladeOne
         if ($style === 'auto') {
             $style = 'sha1';
         }
-        // Recompile templates that previously called the static CSRF helper.
-        $cacheKey = $fullPath . '|csrf-instance-v1';
-        $hash = $style === 'md5' ? \md5($cacheKey) : \sha1($cacheKey);
+        $hash = $style === 'md5' ? \md5($fullPath) : \sha1($fullPath);
         return $this->compiledPath . '/' . basename($templateName) . '_' . $hash . $this->compileExtension;
     }
 
@@ -1504,8 +1490,7 @@ class BladeOne
         $file = $arr[$c - 1];
         \array_splice($arr, $c - 1, $c - 1); // delete the last element
         $path = \implode('/', $arr);
-
-        return $this->locateTemplate(PACKAGES . $path . '/' . $file . $this->fileExtension);
+        return $this->locateTemplate($path . '/' . $file . $this->fileExtension);
     }
 
     /**
@@ -1516,19 +1501,14 @@ class BladeOne
      */
     protected function locateTemplate($name): string
     {
-        if(is_file($name)) {
-            return $name;
-        }
         $this->notFoundPath = '';
         foreach ($this->templatePath as $dir) {
-            $path = $dir . DIRECTORY_SEPARATOR . $name;
+            $path = $dir . '/' . $name;
             if (\is_file($path)) {
                 return $path;
             }
             $this->notFoundPath .= $path . ",";
         }
-
-        var_dump($this->templatePath);
         return '';
     }
 
@@ -1573,16 +1553,16 @@ class BladeOne
             if ($this->mode == self::MODE_DEBUG) {
                 $this->showError('Read file', 'Template not found :' . $this->fileName . " on file: $template", true);
             } else {
-                $this->showError('Read file', 'Template not found :' . $this->fileName . "in path", true);
+                $this->showError('Read file', 'Template not found :' . $this->fileName, true);
             }
         }
         // If the compiled file doesn't exist we will indicate that the view is expired
         // so that it can be re-compiled. Else, we will verify the last modification
-        // of the views or compiler is newer than the compiled views.
+        // of the views is less than the modification times of the compiled views.
         if (!$this->compiledPath || !\is_file($compiled)) {
             return true;
         }
-        return \filemtime($compiled) < max(\filemtime($template), \filemtime(__FILE__));
+        return \filemtime($compiled) < \filemtime($template);
     }
 
     /**
@@ -1699,14 +1679,29 @@ class BladeOne
      */
     public function getCsrfToken($fullToken = false, $tokenId = '_token'): string
     {
-        $this->csrf_token = $this->csrfTokens->token($tokenId);
-        return $fullToken ? $this->csrf_token . '|' . $this->ipClient() : $this->csrf_token;
+        if ($this->csrf_token == '') {
+            $this->regenerateToken($tokenId);
+        }
+        if ($fullToken) {
+            return $this->csrf_token . '|' . $this->ipClient();
+        }
+        return $this->csrf_token;
     }
 
-    /** Regenerate the shared session token explicitly (invalidates existing forms). */
+    /**
+     * Regenerates the csrf token and stores in the session.
+     * It requires an open session.
+     *
+     * @param string $tokenId [optional] Name of the token.
+     */
     public function regenerateToken($tokenId = '_token'): void
     {
-        $this->csrf_token = $this->csrfTokens->regenerate($tokenId);
+        try {
+            $this->csrf_token = \bin2hex(\random_bytes(10));
+        } catch (\Throwable $e) {
+            $this->csrf_token = '123456789012345678901234567890'; // unable to generates a random token.
+        }
+        @$_SESSION[$tokenId] = $this->csrf_token . '|' . $this->ipClient();
     }
 
     public function ipClient()
@@ -1720,18 +1715,29 @@ class BladeOne
         return $_SERVER['REMOTE_ADDR'] ?? '';
     }
 
-    /** Validate unsafe requests before optionally rotating the shared token. */
+    /**
+     * Validates if the csrf token is valid or not.<br>
+     * It requires an open session.
+     *
+     * @param bool   $alwaysRegenerate [optional] Default is false.<br>
+     *                                 If **true** then it will generate a new token regardless
+     *                                 of the method.<br>
+     *                                 If **false**, then it will generate only if the method is POST.<br>
+     *                                 Note: You must not use true if you want to use csrf with AJAX.
+     *
+     * @param string $tokenId          [optional] Name of the token.
+     *
+     * @return bool It returns true if the token is valid, or it is generated. Otherwise, false.
+     */
     public function csrfIsValid($alwaysRegenerate = false, $tokenId = '_token'): bool
     {
-        $request = $this->requests->current();
-        if (!$this->httpMethods->isSafe($request->method())
-            && !$this->csrfTokens->validateToken($request->csrfToken($tokenId), $tokenId)) {
-            return false;
+        if (@$_SERVER['REQUEST_METHOD'] === 'POST' && $alwaysRegenerate === false) {
+            $this->csrf_token = $_POST[$tokenId] ?? null; // ping pong the token.
+            return $this->csrf_token . '|' . $this->ipClient() === ($_SESSION[$tokenId] ?? null);
         }
-        if ($alwaysRegenerate) {
+        if ($this->csrf_token == '' || $alwaysRegenerate) {
+            // if not token then we generate a new one
             $this->regenerateToken($tokenId);
-        } else {
-            $this->getCsrfToken(false, $tokenId);
         }
         return true;
     }
@@ -2786,8 +2792,8 @@ class BladeOne
 
     protected function compilecsrf($expression = null): string
     {
-        $expression = empty($expression) ? "'_token'" : $this->stripParentheses($expression);
-        return "<input type='hidden' name='<?= htmlspecialchars($expression, ENT_QUOTES, 'UTF-8') ?>' value='<?= htmlspecialchars(\$this->getCsrfToken(false, $expression), ENT_QUOTES, 'UTF-8') ?>'/>";
+        $expression = $expression ?? "'_token'";
+        return "<input type='hidden' name='$this->phpTag echo $expression; ?>' value='{$this->phpTag}echo \$this->csrf_token; " . "?>'/>";
     }
 
     protected function compileDd($expression): string
@@ -4261,60 +4267,7 @@ class BladeOne
 
     protected function compileAsset($expression): string
     {
-        $expression = str_replace("('", "", $expression);
-        $expression = str_replace("')", "", $expression);
-
-        $url = HOSTNAME . $this->assetDict[0] . "/". $expression;
-        return $this->phpTagEcho . "'$url'; ?>";
-    }
-
-    protected function compileData($expression): string
-    {
-        $expression = str_replace("('", "", $expression);
-        $expression = str_replace("')", "", $expression);
-        $expression = str_replace("'", "", $expression);
-
-        $args = explode(',', $expression);
-
-        $file = $args[0];
-        $type = $args[1];
-
-        $path = HOSTNAME . "/awt_data/media/packages/$type/" . $this->packageName . "/$file";
-
-        return $this->phpTagEcho . "'$path'; ?>";
-    }
-
-    protected function compileResource($expression): string
-    {
-        return $this->phpTagEcho . '$this->resourceUrl' . $expression . '; ?>';
-    }
-
-    /** Resolve a Resource alias at render time using this template's package context. */
-    public function resourceUrl(string $alias, bool $must = false): string
-    {
-        $context = $this->packageName;
-        if (str_contains($alias, ':')) $context = explode(':', $alias, 2)[0];
-        $resource = new \vfs\resource\Resource($context);
-        $path = $resource->get($alias, $must);
-        if ($path === null) return '';
-
-        $root = rtrim(PACKAGES, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-        if (!str_starts_with($path, $root)) {
-            throw new \vfs\resource\exceptions\ResourceException('Resource is outside the package root.');
-        }
-        $relative = substr($path, strlen($root));
-        $segments = explode(DIRECTORY_SEPARATOR, $relative);
-        $url = rtrim(HOSTNAME, '/') . '/awt_packages/' . implode('/', array_map('rawurlencode', $segments));
-        return self::e($url);
-    }
-
-    protected function compileUrl($expression): string {
-
-        $expression = str_replace("('", "", $expression);
-        $expression = str_replace("')", "", $expression);
-
-        $path = HOSTNAME . "/$expression";
-        return $this->phpTagEcho . "'$path'; ?>";
+        return $this->phpTagEcho . "(isset(\$this->assetDict[$expression]))?\$this->assetDict[$expression]:\$this->baseUrl.'/'.$expression; ?>";
     }
 
     protected function compileJSon($expression): string

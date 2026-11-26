@@ -1,7 +1,7 @@
 <?php
 use exception\AWTException;
 use exception\ExceptionBase;
-use render\TemplateEngine\BladeOne;
+use render\TemplateEngine\AWTBlade;
 
 // ─── CLI renderer ────────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ function render_web_exception(\Throwable $e, array $trace): void
     try {
         http_response_code(500);
         $view   = $isDebug ? "debug" : "error";
-        $engine = new BladeOne(ERRORS_DIRECTORY, COMPILED, BladeOne::MODE_AUTO);
+        $engine = new AWTBlade(ERRORS_DIRECTORY, COMPILED, AWTBlade::MODE_AUTO);
         $engine->setFileExtension(".awt.php");
 
         $data = ['WEB_NAME' => defined('WEB_NAME') ? WEB_NAME : 'App'];
@@ -165,7 +165,7 @@ register_shutdown_function(function () {
     // Web fatal
     http_response_code(500);
     try {
-        $engine = new BladeOne(ERRORS_DIRECTORY, COMPILED, BladeOne::MODE_AUTO);
+        $engine = new AWTBlade(ERRORS_DIRECTORY, COMPILED, AWTBlade::MODE_AUTO);
         $engine->setFileExtension(".awt.php");
         $data = ['WEB_NAME' => defined('WEB_NAME') ? WEB_NAME : 'App'];
         if (defined('DEBUG') && DEBUG) {

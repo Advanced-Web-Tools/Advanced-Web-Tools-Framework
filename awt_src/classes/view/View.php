@@ -6,7 +6,7 @@ use DOMDocument;
 use Exception;
 use render\events\RenderReadyEvent;
 use render\Render;
-use render\TemplateEngine\BladeOne;
+use render\TemplateEngine\AWTBlade;
 use Throwable;
 
 class View extends Render
@@ -80,7 +80,7 @@ class View extends Render
         $this->loadTemplate();
         $this->createBundleObjects();
         try {
-            $parser = new BladeOne($this->viewDirectory, COMPILED, BladeOne::MODE_AUTO,
+            $parser = new AWTBlade($this->viewDirectory, COMPILED, AWTBlade::MODE_AUTO,
                 csrfTokens: $this->csrfTokens ?? new \router\security\Csrf());
             // Also populate the property used by already-compiled @csrf templates.
             $parser->getCsrfToken();
