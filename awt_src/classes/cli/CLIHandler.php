@@ -3,11 +3,19 @@
 namespace cli;
 
 
+use automation\AutomationHandler;
 use cli\interfaces\CLICommand;
 
 
 class CLIHandler
 {
+    private ?AutomationHandler $automationHandler = null;
+
+    public function getAutomationHandler(): AutomationHandler
+    {
+        return $this->automationHandler ??= new AutomationHandler();
+    }
+
     /** Parse interactive input without expanding variables or executing shell syntax. */
     public function parseInput(string $input): array
     {

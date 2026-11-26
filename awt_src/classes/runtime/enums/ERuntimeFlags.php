@@ -59,6 +59,9 @@ enum ERuntimeFlags
      */
     case CommandProvider;
 
+    /** Allows this runtime to register automation jobs in CLI mode. */
+    case AUTOMATION_PROVIDER;
+
     /**
      * Tells RuntimeHandler that this package provides controllers or controller factories.
      * If you are not using the official ` RuntimeControllerAPI ` base class, you must implement `IRuntimeControllerCapabilities` interface.
