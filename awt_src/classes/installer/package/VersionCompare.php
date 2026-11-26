@@ -2,6 +2,7 @@
 
 namespace installer\package;
 
+use installer\framework\FrameworkVersion;
 use installer\interfaces\package\IVersionCompare;
 
 class VersionCompare implements IVersionCompare
@@ -20,6 +21,7 @@ class VersionCompare implements IVersionCompare
      */
     public function compareCompatibility(string $min, ?string $max = null): bool
     {
-        return version_compare(AWT_VERSION, $min, '>=') && (!$max || version_compare(AWT_VERSION, $max, '<='));
+        $version = FrameworkVersion::current();
+        return version_compare($version, $min, '>=') && (!$max || version_compare($version, $max, '<='));
     }
 }

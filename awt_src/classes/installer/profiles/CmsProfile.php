@@ -2,6 +2,8 @@
 
 namespace installer\profiles;
 
+use installer\framework\FrameworkVersion;
+
 final class CmsProfile implements IProfile
 {
     public const REPOSITORY_URL = 'https://raw.githubusercontent.com/Advanced-Web-Tools/AWT-CMS-Bundle/main/repo.json';
@@ -13,6 +15,6 @@ final class CmsProfile implements IProfile
     public function requiresAdmin(): bool { return true; }
     public function packages(): array
     {
-        return [(new CmsReleaseRepository())->releaseUrl(self::REPOSITORY_URL, AWT_VERSION)];
+        return [(new CmsReleaseRepository())->releaseUrl(self::REPOSITORY_URL, FrameworkVersion::current())];
     }
 }

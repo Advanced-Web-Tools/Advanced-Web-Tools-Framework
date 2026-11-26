@@ -75,11 +75,19 @@ jobs:
               output.write(f"tag={version}\n")
 
       - name: Create ZIP without a wrapper folder
+        env:
+          VERSION_TAG: ${{ steps.version.outputs.tag }}
         run: |
+          release_ref=HEAD
+          if git show-ref --verify --quiet "refs/tags/$VERSION_TAG"; then
+            release_ref="refs/tags/$VERSION_TAG"
+          fi
           git archive \
             --format=zip \
             --output="$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" \
-            HEAD
+            "$release_ref"
+          printf '%s\n' "$VERSION_TAG" > "$RUNNER_TEMP/.awt-version"
+          zip -j "$RUNNER_TEMP/Advanced-Web-Tools-Framework.zip" "$RUNNER_TEMP/.awt-version"
 
       - name: Publish versioned release
         env:

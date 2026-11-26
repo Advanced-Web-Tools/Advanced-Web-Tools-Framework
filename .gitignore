@@ -16,4 +16,5 @@ public_html.code-workspace
 /awt_data/media/*
 /awt_db.sqlite
 /awt_db.sqlite-*
+/.awt-version
 /dev_run/test.php

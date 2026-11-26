@@ -8,6 +8,7 @@ use cli\CLIHandler;
 use cli\commands\AutomationCommand;
 use cli\commands\CacheCommand;
 use cli\commands\ClearCommand;
+use cli\commands\FrameworkUpdateCommand;
 use cli\commands\HelloCommand;
 use cli\commands\InstallCommand;
 use cli\commands\PackageManagerCommand;
@@ -22,6 +23,7 @@ $_SERVER['REQUEST_URI'] = '/CLI/';
 
 $cliHandler->addCommand(new InstallCommand());
 $cliHandler->addCommand(new ResourceMapCommand());
+$cliHandler->addCommand(new FrameworkUpdateCommand());
 
 if (DB_TYPE !== '') {
     $cliHandler->addCommand(new CacheCommand());

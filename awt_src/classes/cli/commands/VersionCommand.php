@@ -5,6 +5,7 @@ namespace cli\commands;
 
 
 use cli\interfaces\CLICommand;
+use installer\framework\FrameworkVersion;
 
 
 class VersionCommand implements CLICommand
@@ -32,7 +33,7 @@ class VersionCommand implements CLICommand
 
     public function execute(string $command, array $args = []): void
     {
-        $this->lastResult = AWT_VERSION;
+        $this->lastResult = FrameworkVersion::current();
     }
 
 

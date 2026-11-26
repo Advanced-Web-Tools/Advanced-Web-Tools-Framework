@@ -226,12 +226,13 @@ class FrameworkInstallService
             throw new AWTException(new \Exception("Failed to create table awt_package"));
 
         $package = new InstalledPackage();
+        $version = FrameworkVersion::current();
         $package->setId(1);
         $package->setName("AWT");
-        $package->setVersion(AWT_VERSION);
+        $package->setVersion($version);
         $package->setAuthor("ElStefanos");
-        $package->setMinimumAwtVersion(AWT_VERSION);
-        $package->setMaximumAwtVersion(AWT_VERSION);
+        $package->setMinimumAwtVersion($version);
+        $package->setMaximumAwtVersion($version);
         $package->setDescription("Advanced Web Tools Framework - This package is used to map storage and settings. This is not the ordinary package and should not be removed.");
         $package->setLicense("GNU General Public License v3.0");
         $package->setIcon("https://github-production-user-asset-6210df.s3.amazonaws.com/46761434/562472824-0aff0cb0-4993-446b-b66e-f6d18350cd45.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVCODYLSA53PQK4ZA%2F20261006%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261006T130115Z&X-Amz-Expires=300&X-Amz-Signature=0ac601e919a6bd74e81bb8e05fccd12f916d8952a3a542b594bd30da7b35b608&X-Amz-SignedHeaders=host&response-content-type=image%2Fpng");
