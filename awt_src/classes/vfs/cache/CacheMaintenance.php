@@ -3,6 +3,7 @@
 namespace vfs\cache;
 
 use vfs\resource\Resource;
+use vfs\resource\ResourceCache;
 
 /** Maintenance for generated framework caches, including VFS resource maps. */
 class CacheMaintenance
@@ -22,8 +23,33 @@ class CacheMaintenance
             throw new \RuntimeException('Package directory is missing or unreadable.');
         }
         $this->clear();
-        $resource = (new Resource('System'))->buildResourceMap();
+        return $this->rebuildResourceMaps();
+    }
+
+    public function rebuildResourceMaps(?string $packageName = null): int
+    {
+        if (!is_dir(PACKAGES) || !is_readable(PACKAGES)) {
+            throw new \RuntimeException('Package directory is missing or unreadable.');
+        }
+        $resource = (new Resource('System'))->buildResourceMap($packageName);
         return count($resource->getResourceMap());
+    }
+
+    public function clearResourceMaps(?string $packageName = null): void
+    {
+        $root = DATA . 'storage/framework/cache';
+        $resourcePool = $root . DIRECTORY_SEPARATOR . 'resource';
+        if (is_link($root) || is_link($resourcePool)) {
+            throw new \RuntimeException('Resource cache directories must not be symbolic links.');
+        }
+
+        if ($packageName !== null) {
+            if (!ResourceCache::delete($packageName)) {
+                throw new \RuntimeException("Cannot remove the resource map for {$packageName}.");
+            }
+        } elseif (is_dir($resourcePool)) {
+            $this->clearDirectory($resourcePool);
+        }
     }
 
     private function clearDirectory(string $directory): int

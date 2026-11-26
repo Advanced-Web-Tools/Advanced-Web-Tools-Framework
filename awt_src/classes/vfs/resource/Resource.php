@@ -25,10 +25,19 @@ class Resource
         $this->path = rtrim($path, DIRECTORY_SEPARATOR);
     }
 
-    public function buildResourceMap(): self
+    public function buildResourceMap(?string $packageName = null): self
     {
+        $packages = ResourceBuilder::directoryIterator($this->path);
+        if ($packageName !== null) {
+            if (!in_array($packageName, $packages, true)
+                || !is_dir($this->path . DIRECTORY_SEPARATOR . $packageName)) {
+                throw new ResourceException("Package not found: {$packageName}");
+            }
+            $packages = [$packageName];
+        }
+
         $this->map = [];
-        foreach (ResourceBuilder::directoryIterator($this->path) as $package) {
+        foreach ($packages as $package) {
             $directory = $this->path . DIRECTORY_SEPARATOR . $package;
             if (!is_dir($directory)) continue;
             $map = [$package => (new ResourceBuilder($directory))->build()];
