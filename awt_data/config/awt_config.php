@@ -1,6 +1,6 @@
 <?php
-const AWT_VERSION = "27.1.3";
-const DEBUG = false;
+const AWT_VERSION = "27.2.0";
+const DEBUG = true;
 const SHOW_SQL_CONNECTIONS_CALLS = false;
 
 /**

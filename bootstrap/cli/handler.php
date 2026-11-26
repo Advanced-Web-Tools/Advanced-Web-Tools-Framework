@@ -11,6 +11,7 @@ use cli\commands\ClearCommand;
 use cli\commands\HelloCommand;
 use cli\commands\InstallCommand;
 use cli\commands\PackageManagerCommand;
+use cli\commands\ResourceMapCommand;
 use cli\commands\RoutesCommand;
 use cli\commands\VersionCommand;
 
@@ -20,6 +21,7 @@ $cliHandler = new CLIHandler();
 $_SERVER['REQUEST_URI'] = '/CLI/';
 
 $cliHandler->addCommand(new InstallCommand());
+$cliHandler->addCommand(new ResourceMapCommand());
 
 if (DB_TYPE !== '') {
     $cliHandler->addCommand(new CacheCommand());
