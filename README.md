@@ -81,7 +81,7 @@ Create reusable capabilities that integrate with applications through explicit i
 
 ## Get started
 
-AWT requires **PHP 8.3 or newer**.
+AWT requires **PHP 8.4 or newer**.
 
 1. Download AWT from the [releases page](https://github.com/Advanced-Web-Tools/Advanced-Web-Tools-Framework/releases).
 2. Configure the framework in `awt_data/config/awt_config.php`.
