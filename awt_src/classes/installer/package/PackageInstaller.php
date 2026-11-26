@@ -3,6 +3,7 @@
 namespace installer\package;
 
 use installer\events\PackageInstalledEvent;
+use installer\framework\FrameworkVersion;
 use installer\interfaces\package\IExtractor;
 use installer\interfaces\package\IPackageInstaller;
 use installer\interfaces\package\IPackageMover;
@@ -65,8 +66,9 @@ readonly class PackageInstaller implements IPackageInstaller
             throw new RuntimeException('Circular package dependency: ' . implode(' -> ', [...$chain, $manifest['name']]));
         }
         $chain[] = $manifest['name'];
-        if (defined('AWT_VERSION') && (version_compare(AWT_VERSION, $manifest['minimum_awt_version'], '<')
-            || (!empty($manifest['maximum_awt_version']) && version_compare(AWT_VERSION, $manifest['maximum_awt_version'], '>')))) {
+        $frameworkVersion = defined('AWT_VERSION') ? FrameworkVersion::current() : null;
+        if ($frameworkVersion !== null && (version_compare($frameworkVersion, $manifest['minimum_awt_version'], '<')
+            || (!empty($manifest['maximum_awt_version']) && version_compare($frameworkVersion, $manifest['maximum_awt_version'], '>')))) {
             throw new RuntimeException('Package is incompatible with this AWT version.');
         }
         $installedPackage = $this->packageRepository->getPackage($manifest['name']);

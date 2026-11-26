@@ -8,6 +8,14 @@ if(file_exists(CONFIG . 'awt_db.php')) {
 
 require_once CONFIG . 'awt_config.php';
 
+if (PHP_SAPI === 'cli' && ($_SERVER['argv'][1] ?? null) === 'framework_update') {
+    require_once FUNCTIONS . 'awt_autoLoader.fun.php';
+    $command = new \cli\commands\FrameworkUpdateCommand();
+    $command->execute('framework_update', array_slice($_SERVER['argv'], 2));
+    fwrite($command->getExitCode() === 0 ? STDOUT : STDERR, $command->result() . PHP_EOL);
+    exit($command->getExitCode());
+}
+
 if (DB_TYPE === '') {
     if (PHP_SAPI !== 'cli') {
         if (file_exists(CONFIG . 'awt_db.php')) {

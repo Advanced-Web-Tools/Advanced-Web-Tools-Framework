@@ -1,6 +1,7 @@
 <?php
 namespace runtime;
 
+use installer\framework\FrameworkVersion;
 use runtime\enums\ERuntimeStatus;
 use runtime\interface\IRuntime;
 use runtime\interface\IRuntimeExecutor;
@@ -37,15 +38,16 @@ final class RuntimeOrchestrator implements IRuntimeOrchestrator
     private function validate(): void
     {
         $installed = [];
+        $frameworkVersion = defined('AWT_VERSION') ? FrameworkVersion::current() : null;
         foreach ($this->installed as $package) $installed[$package->getName()] = $package;
         foreach ($this->byName as $name => $runtime) {
             $package = $runtime->getPackage();
             if (!is_file($runtime->getRootPath() . 'main.php')) {
                 throw new \runtime\exceptions\RuntimeException("Package {$name} has no main.php entry point.");
             }
-            if (defined('AWT_VERSION') && (version_compare(AWT_VERSION, $package->minimum_awt_version, '<')
-                || ($package->maximum_awt_version !== null && version_compare(AWT_VERSION, $package->maximum_awt_version, '>')))) {
-                throw new \runtime\exceptions\RuntimeException("Package {$name} is incompatible with AWT " . AWT_VERSION);
+            if ($frameworkVersion !== null && (version_compare($frameworkVersion, $package->minimum_awt_version, '<')
+                || ($package->maximum_awt_version !== null && version_compare($frameworkVersion, $package->maximum_awt_version, '>')))) {
+                throw new \runtime\exceptions\RuntimeException("Package {$name} is incompatible with AWT {$frameworkVersion}");
             }
             foreach ($package->getDependencies() as $dependency) {
                 $target = $installed[$dependency['name']] ?? null;

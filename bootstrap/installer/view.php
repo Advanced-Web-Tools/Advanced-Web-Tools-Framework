@@ -754,7 +754,7 @@ noscript {
 <aside class="sidebar" aria-label="Installation progress">
 <div class="brand"><img src="https://avatars.githubusercontent.com/u/152005400?s=200&amp;v=4" alt="AWT"><div><strong>Advanced Web Tools</strong><span>A little setup. Endless possibilities.</span></div></div>
 <ol class="steps" id="steps"></ol>
-<div class="sidebar-bottom"><button type="button" class="text-button" id="restart"><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> Start again</button><p>AWT <?= htmlspecialchars((string) AWT_VERSION, ENT_QUOTES, 'UTF-8') ?><br>Made for what comes next.</p></div>
+<div class="sidebar-bottom"><button type="button" class="text-button" id="restart"><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> Start again</button><p>AWT <?= htmlspecialchars(\installer\framework\FrameworkVersion::current(), ENT_QUOTES, 'UTF-8') ?><br>Made for what comes next.</p></div>
 </aside>
 <main class="main">
 <header class="topbar"><div class="step-context"><span class="profile-chip" id="profile-indicator" aria-live="polite"></span><span class="eyebrow" id="step-count"></span></div><button type="button" class="help-button" id="help"><i class="fa-regular fa-circle-question" aria-hidden="true"></i> Help</button></header>
