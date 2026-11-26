@@ -4,6 +4,7 @@ namespace cli\commands;
 
 use cli\interfaces\CLICommand;
 use installer\package\Extractor;
+use installer\package\PackageDelta;
 use installer\package\PackageInstaller;
 use installer\package\PackageDownload;
 use installer\package\PackageMover;
@@ -34,7 +35,8 @@ class PackageManagerCommand implements CLICommand
     {
         return [
             "install" => "Installs a package",
-            "update" => "Updates an installed package",
+            "update" => "Updates an installed package from a full or delta ZIP",
+            "create-delta" => "Builds a delta ZIP: pm create-delta <base-directory> <target-directory> <output.zip>",
             "dependencies" => "Optional: recursively install missing or incompatible dependencies from their URLs (pm install|update <path-or-url> dependencies)",
             "remove" => "Removes a package",
             "enable" => "Enables a package",
@@ -51,7 +53,7 @@ class PackageManagerCommand implements CLICommand
         $pathOrId = $args[1] ?? '';
 
         if (empty($action)) {
-            $this->lastResult = "No action given.\nSpecify one of the following actions: install, update, remove, enable, disable, list.\n";
+            $this->lastResult = "No action given.\nSpecify one of the following actions: install, update, create-delta, remove, enable, disable, list.\n";
             return;
         }
 
@@ -67,6 +69,19 @@ class PackageManagerCommand implements CLICommand
                     return;
                 }
                 $this->install($pathOrId, strtolower($action) === 'update', isset($args[2]));
+                break;
+
+            case 'create-delta':
+                if (count($args) !== 4) {
+                    $this->lastResult = 'Usage: pm create-delta <base-directory> <target-directory> <output.zip>';
+                    return;
+                }
+                try {
+                    PackageDelta::create($args[1], $args[2], $args[3]);
+                    $this->lastResult = "Created package delta: {$args[3]}";
+                } catch (Throwable $e) {
+                    $this->lastResult = 'Failed to create package delta: ' . $e->getMessage();
+                }
                 break;
 
             case 'remove':
@@ -95,7 +110,7 @@ class PackageManagerCommand implements CLICommand
                 $this->disable($pathOrId);
                 break;
             default:
-                $this->lastResult = "Unknown action: {$action}\nUse install, update, remove, enable, disable, or list.\n";
+                $this->lastResult = "Unknown action: {$action}\nUse install, update, create-delta, remove, enable, disable, or list.\n";
                 break;
         }
     }
